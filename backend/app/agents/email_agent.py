@@ -92,17 +92,30 @@ Respond ONLY with valid JSON:
             "body": f"Thank you for your email. We will review your query and respond shortly.\n\n[AI drafting failed: {e}]",
         }
 
-    # Save draft as EmailMessage
+    subject = data.get("subject", f"Re: {thread.subject or 'Your inquiry'}")
+    body = data.get("body", "")
+
+    # Push to Gmail Drafts folder if this thread came from Gmail
+    gmail_draft_id = None
+    if thread.source and thread.source.value == "gmail":
+        try:
+            from app.services.gmail_service import push_draft_to_gmail
+            gmail_draft_id = push_draft_to_gmail(thread, subject, body, db)
+        except Exception:
+            pass  # Draft still saved locally even if Gmail push fails
+
+    # Save draft locally
     draft_msg = EmailMessage(
         thread_id=thread.id,
-        sender="ar@company.com",
-        body_text=data.get("body", ""),
+        sender=thread.mailbox or "ar@company.com",
+        body_text=body,
         is_draft=True,
         is_outbound=True,
+        draft_external_id=gmail_draft_id,
     )
     db.add(draft_msg)
 
-    # Update thread status and todo
+    # Update thread status and create todo
     thread.status = ThreadStatus.draft_ready
     existing_todo = db.query(TodoItem).filter(
         TodoItem.linked_thread_id == thread.id,
@@ -123,7 +136,7 @@ Respond ONLY with valid JSON:
 
     return DraftOut(
         thread_id=thread.id,
-        draft_body=data.get("body", ""),
-        subject=data.get("subject", f"Re: {thread.subject or 'Your inquiry'}"),
-        external_draft_id=None,
+        draft_body=body,
+        subject=subject,
+        external_draft_id=gmail_draft_id,
     )

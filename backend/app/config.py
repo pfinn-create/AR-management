@@ -11,6 +11,9 @@ class Settings(BaseSettings):
 
     gmail_client_id: str = ""
     gmail_client_secret: str = ""
+    gmail_redirect_uri: str = "http://localhost:8000/gmail/callback"
+
+    frontend_url: str = "http://localhost:3000"
 
     outlook_client_id: str = ""
     outlook_client_secret: str = ""

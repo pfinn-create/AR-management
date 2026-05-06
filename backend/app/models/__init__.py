@@ -5,3 +5,4 @@ from app.models.invoice import Invoice
 from app.models.payment import Payment, RemittanceLine
 from app.models.email_thread import EmailThread, EmailMessage
 from app.models.todo import TodoItem
+from app.models.oauth_token import OAuthToken

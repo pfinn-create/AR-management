@@ -3,7 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
 from app.database import Base, engine
 from app.models import *  # ensure all models are registered
-from app.routers import auth, companies, users, invoices, customers, payments, emails, todos, reports
+from app.routers import auth, companies, users, invoices, customers, payments, emails, todos, reports, gmail
 from app.models.company import Company, COMPANIES
 from app.models.user import User, UserRole
 from app.routers.auth import hash_password
@@ -63,6 +63,7 @@ app.include_router(payments.router)
 app.include_router(emails.router)
 app.include_router(todos.router)
 app.include_router(reports.router)
+app.include_router(gmail.router)
 
 
 @app.get("/health")
