@@ -2,6 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 from typing import List, Optional
 from datetime import datetime, timezone
+from pydantic import BaseModel
 from app.database import get_db
 from app.models.email_thread import EmailThread, EmailMessage, ThreadStatus, EmailSource
 from app.models.user import User
@@ -68,6 +69,38 @@ def update_thread_status(
     t.status = status
     db.commit()
     return {"detail": "Updated"}
+
+
+class DraftEditRequest(BaseModel):
+    thread_id: int
+    original_body: str
+    edited_body: str
+    original_subject: str
+    edited_subject: str
+
+
+@router.post("/draft/learn")
+async def record_draft_edit(
+    req: DraftEditRequest,
+    db: Session = Depends(get_db),
+    user: User = Depends(current_user),
+):
+    """Record user edits to an AI draft for future learning."""
+    thread = db.query(EmailThread).filter(EmailThread.id == req.thread_id).first()
+    if not thread:
+        raise HTTPException(status_code=404, detail="Thread not found")
+    assert_company_access(user, thread.company_id)
+    from app.agents.email_agent import record_draft_edit as _record
+    await _record(
+        thread_id=req.thread_id,
+        original_body=req.original_body,
+        edited_body=req.edited_body,
+        original_subject=req.original_subject,
+        edited_subject=req.edited_subject,
+        editor_user_id=user.id,
+        db=db,
+    )
+    return {"detail": "Learning recorded"}
 
 
 @router.post("/sync/{company_id}")

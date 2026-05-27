@@ -25,6 +25,7 @@ class TodoStatus(str, enum.Enum):
     in_progress = "in_progress"
     done = "done"
     snoozed = "snoozed"
+    archived = "archived"
 
 
 class TodoItem(Base):

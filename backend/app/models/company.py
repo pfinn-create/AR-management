@@ -3,7 +3,7 @@ from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 from app.database import Base
 
-COMPANIES = ["CFS", "ASI", "LV", "Dom", "LSD", "TI", "HWA", "H&W", "Com", "I4pro"]
+COMPANIES = ["CFS", "ASI", "LV", "Dom", "LSD", "TI", "HWA", "H&W", "Com"]
 
 
 class Company(Base):

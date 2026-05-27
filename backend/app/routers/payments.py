@@ -4,6 +4,7 @@ from typing import List, Optional
 from datetime import datetime, timezone
 import pandas as pd
 import io
+import re
 from app.database import get_db
 from app.models.payment import Payment, RemittanceLine, PaymentStatus, MatchConfidence
 from app.models.invoice import Invoice
@@ -142,7 +143,133 @@ async def import_chase_csv(
         created += 1
 
     db.commit()
+
+    # Trigger payment matching agent for all new payments
+    from app.agents.coordinator import trigger_for_company
+    import asyncio
+    asyncio.create_task(trigger_for_company(company_id, ["reply_tracking"]))
+
     return {"created": created, "skipped": skipped}
+
+
+@router.post("/import/chase-pdf/{company_id}", response_model=dict)
+async def import_chase_pdf(
+    company_id: int,
+    file: UploadFile = File(...),
+    db: Session = Depends(get_db),
+    user: User = Depends(current_user),
+):
+    """Parse a Chase bank statement PDF and extract credit transactions."""
+    assert_company_access(user, company_id)
+
+    try:
+        import pdfplumber
+    except ImportError:
+        raise HTTPException(status_code=500, detail="pdfplumber not installed")
+
+    content = await file.read()
+    transactions = _parse_chase_pdf(content)
+
+    created = skipped = 0
+    for txn in transactions:
+        amt = txn.get("amount", 0)
+        if amt <= 0:
+            skipped += 1
+            continue
+
+        ref = txn.get("reference_number") or None
+        pay_date = txn.get("payment_date")
+
+        existing = db.query(Payment).filter(
+            Payment.company_id == company_id,
+            Payment.payer_name == txn.get("payer_name"),
+            Payment.amount == amt,
+            Payment.payment_date == pay_date,
+        ).first()
+
+        if existing:
+            skipped += 1
+            continue
+
+        p = Payment(
+            company_id=company_id,
+            payment_date=pay_date,
+            amount=amt,
+            currency="USD",
+            payer_name=txn.get("payer_name"),
+            reference_number=ref,
+            memo=txn.get("memo"),
+            source="chase_pdf",
+            status=PaymentStatus.pending_review,
+        )
+        db.add(p)
+        created += 1
+
+    db.commit()
+    return {"created": created, "skipped": skipped, "total_parsed": len(transactions)}
+
+
+def _parse_chase_pdf(content: bytes) -> list[dict]:
+    """
+    Extract credit transactions from a Chase PDF statement or transaction export.
+    Handles both the full monthly statement layout and the filtered transaction export.
+    """
+    import pdfplumber
+
+    transactions = []
+    date_pattern = re.compile(r"(\d{2}/\d{2})")
+    amount_pattern = re.compile(r"\$([\d,]+\.\d{2})")
+
+    with pdfplumber.open(io.BytesIO(content)) as pdf:
+        for page in pdf.pages:
+            text = page.extract_text() or ""
+            lines = text.split("\n")
+
+            for i, line in enumerate(lines):
+                # Look for lines with a date at the start and a positive dollar amount
+                date_match = date_pattern.match(line.strip())
+                if not date_match:
+                    continue
+
+                # Try to extract amount — credits appear as positive in Chase exports
+                amounts = amount_pattern.findall(line)
+                if not amounts:
+                    continue
+
+                amount_str = amounts[-1].replace(",", "")
+                try:
+                    amount = float(amount_str)
+                except ValueError:
+                    continue
+
+                # Skip if this looks like a debit (negative context clue words)
+                line_lower = line.lower()
+                if any(kw in line_lower for kw in ["purchase", "payment to", "atm", "fee", "interest"]):
+                    continue
+
+                # Extract description (everything between date and amount)
+                desc = re.sub(r"\d{2}/\d{2}", "", line)
+                desc = amount_pattern.sub("", desc).strip()
+                desc = re.sub(r"\s+", " ", desc).strip()
+
+                # Try to parse the date (Chase uses MM/DD format — assume current year)
+                try:
+                    from dateutil.parser import parse as dateparse
+                    pay_date = dateparse(date_match.group(1)).replace(
+                        year=datetime.now().year, tzinfo=timezone.utc
+                    )
+                except Exception:
+                    pay_date = None
+
+                transactions.append({
+                    "payment_date": pay_date,
+                    "payer_name": desc[:255] if desc else "Chase PDF Import",
+                    "amount": amount,
+                    "memo": f"PDF import: {line.strip()[:200]}",
+                    "reference_number": None,
+                })
+
+    return transactions
 
 
 @router.post("/{payment_id}/match", response_model=PaymentMatchResult)

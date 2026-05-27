@@ -6,8 +6,66 @@ export interface User {
   full_name: string;
   role: UserRole;
   is_active: boolean;
+  email_consent: boolean;
+  email_consent_at: string | null;
   company_ids: number[];
   created_at: string;
+}
+
+export type DisputeStatus = "open" | "under_review" | "resolved" | "rejected";
+export type DisputeReason =
+  | "incorrect_amount"
+  | "duplicate_invoice"
+  | "goods_not_received"
+  | "quality_issue"
+  | "already_paid"
+  | "contract_dispute"
+  | "other";
+
+export interface Dispute {
+  id: number;
+  company_id: number;
+  invoice_id: number;
+  customer_id: number | null;
+  reason: DisputeReason;
+  description: string | null;
+  status: DisputeStatus;
+  raised_by: number;
+  assigned_to: number | null;
+  resolution_notes: string | null;
+  resolved_at: string | null;
+  linked_thread_id: number | null;
+  created_at: string;
+  invoice_number: string | null;
+  customer_name: string | null;
+}
+
+export type EscalationStatus = "flagged" | "under_review" | "resolved" | "escalated_to_manager";
+
+export interface EscalationFlag {
+  id: number;
+  company_id: number;
+  customer_id: number;
+  trigger_reason: string | null;
+  days_overdue: number | null;
+  amount_overdue: number | null;
+  status: EscalationStatus;
+  assigned_to: number | null;
+  resolution_notes: string | null;
+  resolved_at: string | null;
+  created_at: string;
+  customer_name: string | null;
+}
+
+export interface CompanySettings {
+  company_id: number;
+  payment_terms_days: number;
+  monitored_inbox: string | null;
+  email_auto_draft: boolean;
+  followup_intervals: number[];
+  escalation_days_overdue: number;
+  escalation_min_amount: number;
+  bank_format: string;
 }
 
 export interface Company {
@@ -125,7 +183,7 @@ export interface EmailThread {
 
 export type TodoCategory = "unanswered_email" | "missing_invoice_detail" | "payment_review" | "draft_approval" | "overdue_invoice" | "general";
 export type TodoPriority = "high" | "medium" | "low";
-export type TodoStatus = "open" | "in_progress" | "done" | "snoozed";
+export type TodoStatus = "open" | "in_progress" | "done" | "snoozed" | "archived";
 
 export interface TodoItem {
   id: number;

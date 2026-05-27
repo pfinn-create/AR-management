@@ -51,6 +51,8 @@ def _user_out(user: User) -> UserOut:
         full_name=user.full_name,
         role=user.role,
         is_active=user.is_active,
+        email_consent=user.email_consent or False,
+        email_consent_at=user.email_consent_at,
         created_at=user.created_at,
         company_ids=company_ids,
     )

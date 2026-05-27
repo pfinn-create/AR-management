@@ -1,9 +1,10 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from typing import List
+from datetime import datetime, timezone
 from app.database import get_db
 from app.models.user import User, UserCompanyAccess
-from app.schemas.user import UserOut, UserUpdate, UserCreate
+from app.schemas.user import UserOut, UserUpdate, UserCreate, EmailConsentRequest
 from app.routers.deps import current_user, manager_only
 from app.routers.auth import hash_password, _user_out
 
@@ -21,6 +22,20 @@ def list_users(
 
 @router.get("/me", response_model=UserOut)
 def get_me(user: User = Depends(current_user)):
+    return _user_out(user)
+
+
+@router.post("/me/email-consent", response_model=UserOut)
+def set_email_consent(
+    req: EmailConsentRequest,
+    db: Session = Depends(get_db),
+    user: User = Depends(current_user),
+):
+    """Record the user's email access consent decision (asked once on first login)."""
+    user.email_consent = req.consent
+    user.email_consent_at = datetime.now(timezone.utc)
+    db.commit()
+    db.refresh(user)
     return _user_out(user)
 
 

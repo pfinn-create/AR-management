@@ -10,6 +10,8 @@ import Emails from "./pages/Emails";
 import Todos from "./pages/Todos";
 import Reports from "./pages/Reports";
 import Users from "./pages/Users";
+import Disputes from "./pages/Disputes";
+import CompanySettings from "./pages/CompanySettings";
 
 function PrivateRoute({ children }: { children: React.ReactNode }) {
   const { user, isLoading } = useAuth();
@@ -37,6 +39,8 @@ export default function App() {
                 <Route path="todos" element={<Todos />} />
                 <Route path="reports" element={<Reports />} />
                 <Route path="users" element={<Users />} />
+                <Route path="disputes" element={<Disputes />} />
+                <Route path="settings" element={<CompanySettings />} />
               </Routes>
             </Layout>
           </PrivateRoute>

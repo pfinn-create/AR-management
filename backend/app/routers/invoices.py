@@ -229,8 +229,9 @@ async def import_netsuite_csv(
 
     db.commit()
 
-    # Auto-generate overdue todos
-    _generate_overdue_todos(company_id, db)
+    # Run aging agent to generate follow-ups and escalations
+    from app.agents.aging_agent import run_aging_agent
+    run_aging_agent(company_id, db)
 
     return InvoiceImportResult(created=created, updated=updated, skipped=skipped, errors=errors)
 

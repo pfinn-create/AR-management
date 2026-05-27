@@ -19,6 +19,9 @@ class User(Base):
     hashed_password = Column(String(255), nullable=False)
     role = Column(Enum(UserRole), nullable=False, default=UserRole.ar_specialist)
     is_active = Column(Boolean, default=True)
+    # Email consent — asked once on first login
+    email_consent = Column(Boolean, default=False)
+    email_consent_at = Column(DateTime(timezone=True))
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
     company_access = relationship("UserCompanyAccess", back_populates="user")

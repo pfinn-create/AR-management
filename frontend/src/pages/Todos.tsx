@@ -2,9 +2,9 @@ import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useCompany } from "../context/CompanyContext";
 import api from "../utils/api";
-import { TodoItem, TodoCategory, TodoPriority, TodoStatus } from "../types";
-import { formatDate, statusColor } from "../utils/formatters";
-import { CheckCircle, Circle, Clock } from "lucide-react";
+import { TodoItem, TodoCategory, TodoPriority } from "../types";
+import { formatDate } from "../utils/formatters";
+import { CheckCircle, Circle, Clock, Archive } from "lucide-react";
 import toast from "react-hot-toast";
 import clsx from "clsx";
 
@@ -30,20 +30,26 @@ export default function Todos() {
   const { activeCompany } = useCompany();
   const [categoryFilter, setCategoryFilter] = useState<TodoCategory | "">("");
   const [priorityFilter, setPriorityFilter] = useState<TodoPriority | "">("");
+  const [view, setView] = useState<"open" | "archived">("open");
   const qc = useQueryClient();
 
   const cid = activeCompany?.id;
 
   const { data: todos = [], isLoading } = useQuery<TodoItem[]>({
-    queryKey: ["todos", cid, categoryFilter],
-    queryFn: () => api.get(`/todos?company_id=${cid}${categoryFilter ? `&category=${categoryFilter}` : ""}`).then(r => r.data),
+    queryKey: ["todos", cid, categoryFilter, view],
+    queryFn: () => {
+      const params = new URLSearchParams({ company_id: String(cid) });
+      if (categoryFilter) params.set("category", categoryFilter);
+      if (view === "archived") params.set("status", "archived");
+      return api.get(`/todos?${params}`).then(r => r.data);
+    },
     enabled: !!cid,
   });
 
   const doneMut = useMutation({
-    mutationFn: (id: number) => api.delete(`/todos/${id}`),
+    mutationFn: (id: number) => api.patch(`/todos/${id}`, { status: "archived" }),
     onSuccess: () => {
-      toast.success("Marked done");
+      toast.success("Archived");
       qc.invalidateQueries({ queryKey: ["todos", cid] });
       qc.invalidateQueries({ queryKey: ["companies"] });
     },
@@ -68,9 +74,32 @@ export default function Todos() {
 
   return (
     <div className="space-y-4">
-      <div>
-        <h1 className="text-xl font-bold text-gray-900">To-Do</h1>
-        <p className="text-xs text-gray-400">{activeCompany.name} · {filtered.length} open items</p>
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-xl font-bold text-gray-900">To-Do</h1>
+          <p className="text-xs text-gray-400">{activeCompany.name} · {filtered.length} {view === "archived" ? "archived" : "open"} items</p>
+        </div>
+        <div className="flex gap-1 bg-gray-100 rounded-lg p-1">
+          <button
+            onClick={() => setView("open")}
+            className={clsx(
+              "px-3 py-1.5 rounded-md text-xs font-medium transition-colors",
+              view === "open" ? "bg-white text-gray-800 shadow-sm" : "text-gray-500 hover:text-gray-700"
+            )}
+          >
+            Open
+          </button>
+          <button
+            onClick={() => setView("archived")}
+            className={clsx(
+              "px-3 py-1.5 rounded-md text-xs font-medium transition-colors flex items-center gap-1",
+              view === "archived" ? "bg-white text-gray-800 shadow-sm" : "text-gray-500 hover:text-gray-700"
+            )}
+          >
+            <Archive className="w-3 h-3" />
+            Archived
+          </button>
+        </div>
       </div>
 
       <div className="flex items-center gap-3 flex-wrap">
@@ -126,18 +155,23 @@ export default function Todos() {
               <div className="card p-0 divide-y divide-gray-50">
                 {grouped[cat].map(todo => (
                   <div key={todo.id} className="flex items-center gap-3 px-4 py-3">
-                    <button
-                      onClick={() => doneMut.mutate(todo.id)}
-                      className="text-gray-300 hover:text-green-500 transition-colors shrink-0"
-                      title="Mark done"
-                    >
-                      {todo.status === "in_progress"
-                        ? <Clock className="w-4 h-4 text-yellow-400" />
-                        : <Circle className="w-4 h-4" />}
-                    </button>
+                    {view === "open" && (
+                      <button
+                        onClick={() => doneMut.mutate(todo.id)}
+                        className="text-gray-300 hover:text-green-500 transition-colors shrink-0"
+                        title="Archive"
+                      >
+                        {todo.status === "in_progress"
+                          ? <Clock className="w-4 h-4 text-yellow-400" />
+                          : <Circle className="w-4 h-4" />}
+                      </button>
+                    )}
+                    {view === "archived" && (
+                      <CheckCircle className="w-4 h-4 text-green-400 shrink-0" />
+                    )}
 
                     <div className="flex-1 min-w-0">
-                      <p className={clsx("text-sm", todo.status === "done" ? "line-through text-gray-400" : "text-gray-800")}>
+                      <p className={clsx("text-sm", view === "archived" ? "text-gray-400" : "text-gray-800")}>
                         {todo.title}
                       </p>
                       {todo.description && (
@@ -152,7 +186,7 @@ export default function Todos() {
                       <span className={`badge ${todo.priority === "high" ? "bg-red-100 text-red-700" : todo.priority === "medium" ? "bg-yellow-100 text-yellow-700" : "bg-gray-100 text-gray-500"}`}>
                         {todo.priority}
                       </span>
-                      {todo.status !== "in_progress" && (
+                      {view === "open" && todo.status !== "in_progress" && (
                         <button
                           onClick={() => inProgressMut.mutate(todo.id)}
                           className="text-xs text-gray-400 hover:text-brand-600 transition-colors"
@@ -160,12 +194,14 @@ export default function Todos() {
                           Start
                         </button>
                       )}
-                      <button
-                        onClick={() => doneMut.mutate(todo.id)}
-                        className="text-xs text-gray-400 hover:text-green-600 transition-colors"
-                      >
-                        Done
-                      </button>
+                      {view === "open" && (
+                        <button
+                          onClick={() => doneMut.mutate(todo.id)}
+                          className="text-xs text-gray-400 hover:text-green-600 transition-colors"
+                        >
+                          Done
+                        </button>
+                      )}
                     </div>
                   </div>
                 ))}

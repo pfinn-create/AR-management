@@ -132,7 +132,8 @@ export default function Payments() {
   const { activeCompany } = useCompany();
   const [statusFilter, setStatusFilter] = useState("");
   const [selected, setSelected] = useState<Payment | null>(null);
-  const fileRef = useRef<HTMLInputElement>(null);
+  const csvRef = useRef<HTMLInputElement>(null);
+  const pdfRef = useRef<HTMLInputElement>(null);
   const qc = useQueryClient();
 
   const cid = activeCompany?.id;
@@ -143,17 +144,30 @@ export default function Payments() {
     enabled: !!cid,
   });
 
-  const importMut = useMutation({
+  const importCsvMut = useMutation({
     mutationFn: (file: File) => {
       const fd = new FormData();
       fd.append("file", file);
       return api.post(`/payments/import/chase/${cid}`, fd, { headers: { "Content-Type": "multipart/form-data" } });
     },
     onSuccess: (res) => {
-      toast.success(`Chase import: ${res.data.created} payments added`);
+      toast.success(`Chase CSV import: ${res.data.created} payments added`);
       qc.invalidateQueries({ queryKey: ["payments", cid] });
     },
-    onError: () => toast.error("Import failed"),
+    onError: () => toast.error("CSV import failed"),
+  });
+
+  const importPdfMut = useMutation({
+    mutationFn: (file: File) => {
+      const fd = new FormData();
+      fd.append("file", file);
+      return api.post(`/payments/import/chase-pdf/${cid}`, fd, { headers: { "Content-Type": "multipart/form-data" } });
+    },
+    onSuccess: (res) => {
+      toast.success(`Chase PDF import: ${res.data.created} payments added`);
+      qc.invalidateQueries({ queryKey: ["payments", cid] });
+    },
+    onError: () => toast.error("PDF import failed"),
   });
 
   const STATUS_OPTS = [
@@ -174,11 +188,17 @@ export default function Payments() {
           <p className="text-xs text-gray-400">{activeCompany.name}</p>
         </div>
         <div className="flex gap-2">
-          <input type="file" ref={fileRef} className="hidden" accept=".csv,.xlsx"
-            onChange={(e) => e.target.files?.[0] && importMut.mutate(e.target.files[0])} />
-          <button onClick={() => fileRef.current?.click()} disabled={importMut.isPending} className="btn-secondary">
+          <input type="file" ref={csvRef} className="hidden" accept=".csv,.xlsx"
+            onChange={(e) => e.target.files?.[0] && importCsvMut.mutate(e.target.files[0])} />
+          <input type="file" ref={pdfRef} className="hidden" accept=".pdf"
+            onChange={(e) => e.target.files?.[0] && importPdfMut.mutate(e.target.files[0])} />
+          <button onClick={() => csvRef.current?.click()} disabled={importCsvMut.isPending} className="btn-secondary">
             <Upload className="w-4 h-4" />
-            {importMut.isPending ? "Importing…" : "Upload Chase Report"}
+            {importCsvMut.isPending ? "Importing…" : "Upload CSV"}
+          </button>
+          <button onClick={() => pdfRef.current?.click()} disabled={importPdfMut.isPending} className="btn-secondary">
+            <Upload className="w-4 h-4" />
+            {importPdfMut.isPending ? "Importing…" : "Upload PDF"}
           </button>
         </div>
       </div>

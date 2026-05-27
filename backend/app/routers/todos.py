@@ -25,7 +25,7 @@ def list_todos(
     if status:
         q = q.filter(TodoItem.status == status)
     else:
-        q = q.filter(TodoItem.status != TodoStatus.done)
+        q = q.filter(TodoItem.status.notin_([TodoStatus.done, TodoStatus.archived]))
     return q.order_by(TodoItem.created_at.desc()).all()
 
 

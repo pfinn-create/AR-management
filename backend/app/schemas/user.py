@@ -25,11 +25,17 @@ class UserUpdate(BaseModel):
 class UserOut(UserBase):
     id: int
     is_active: bool
+    email_consent: bool = False
+    email_consent_at: Optional[datetime] = None
     created_at: datetime
     company_ids: List[int] = []
 
     class Config:
         from_attributes = True
+
+
+class EmailConsentRequest(BaseModel):
+    consent: bool
 
 
 class Token(BaseModel):

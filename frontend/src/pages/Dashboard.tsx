@@ -2,7 +2,7 @@ import { useQuery } from "@tanstack/react-query";
 import { useCompany } from "../context/CompanyContext";
 import api from "../utils/api";
 import { formatCurrency, formatDate, statusColor } from "../utils/formatters";
-import { Invoice, TodoItem, MonthlyTrend, AgingReport } from "../types";
+import { Invoice, TodoItem, MonthlyTrend, AgingReport, EscalationFlag } from "../types";
 import { AlertTriangle, Mail, CheckSquare, TrendingUp, FileText, CreditCard } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import {
@@ -60,10 +60,20 @@ export default function Dashboard() {
     enabled: !!cid,
   });
 
+  const { data: escalations = [] } = useQuery<EscalationFlag[]>({
+    queryKey: ["escalations", cid],
+    queryFn: () => api.get(`/escalations?company_id=${cid}&status=flagged`).then(r => r.data),
+    enabled: !!cid,
+  });
+
   const overdue = invoices.filter(i => i.status === "overdue");
   const overdueAmount = overdue.reduce((s, i) => s + Number(i.balance), 0);
   const totalAR = invoices.reduce((s, i) => s + Number(i.balance), 0);
   const highTodos = todos.filter(t => t.priority === "high");
+
+  const now = new Date();
+  const monthStart = new Date(now.getFullYear(), now.getMonth(), 1).toISOString().slice(0, 10);
+  const cashCollected = trends.length > 0 ? trends[trends.length - 1].collected : 0;
 
   const agingData = aging
     ? [
@@ -87,7 +97,7 @@ export default function Dashboard() {
       </div>
 
       {/* Stat cards */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+      <div className="grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4">
         <StatCard
           icon={FileText} label="Total AR Balance" value={formatCurrency(totalAR)}
           sub={`${invoices.filter(i => i.status !== "paid").length} open invoices`}
@@ -101,6 +111,12 @@ export default function Dashboard() {
           onClick={() => navigate("/invoices")}
         />
         <StatCard
+          icon={CreditCard} label="Collected (MTD)" value={formatCurrency(cashCollected)}
+          sub="This month"
+          color="bg-green-50 text-green-600"
+          onClick={() => navigate("/payments")}
+        />
+        <StatCard
           icon={CheckSquare} label="Open To-Dos" value={String(todos.length)}
           sub={`${highTodos.length} high priority`}
           color="bg-yellow-50 text-yellow-600"
@@ -111,6 +127,12 @@ export default function Dashboard() {
           sub="Need response"
           color="bg-purple-50 text-purple-600"
           onClick={() => navigate("/emails")}
+        />
+        <StatCard
+          icon={TrendingUp} label="Escalations" value={String(escalations.length)}
+          sub="Active flags"
+          color="bg-orange-50 text-orange-600"
+          onClick={() => navigate("/disputes")}
         />
       </div>
 
