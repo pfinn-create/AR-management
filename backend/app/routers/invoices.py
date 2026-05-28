@@ -14,28 +14,55 @@ from app.routers.deps import current_user, assert_company_access
 router = APIRouter(prefix="/invoices", tags=["invoices"])
 
 NETSUITE_COLUMN_MAP = {
+    # Invoice number variants
     "Invoice #": "invoice_number",
     "Invoice Number": "invoice_number",
+    "Document Number": "invoice_number",
+    "Doc Number": "invoice_number",
+    "Num": "invoice_number",
+    # PO number variants
     "PO #": "po_number",
     "PO Number": "po_number",
+    "P.O. No.": "po_number",
+    "P.O. Number": "po_number",
+    # Date variants
     "Invoice Date": "invoice_date",
     "Date": "invoice_date",
+    # Due date
     "Due Date": "due_date",
+    # Amount variants
     "Amount": "amount",
     "Total": "amount",
+    "Original Amount": "amount",
+    # Amount paid
     "Amount Paid": "amount_paid",
+    "Payment": "amount_paid",
+    # Balance variants
     "Balance": "balance",
     "Balance Due": "balance",
+    "Open Balance": "balance",
+    "Amount Due": "balance",
+    # Currency
     "Currency": "currency",
+    # Customer variants
     "Customer": "customer_name",
     "Customer Name": "customer_name",
+    "Customer:Project": "customer_name",
+    "Name": "customer_name",
+    # NetSuite ID
     "NetSuite ID": "netsuite_id",
     "Internal ID": "netsuite_id",
+    # Payment terms
     "Terms": "payment_terms_days",
     "Payment Terms": "payment_terms_days",
+    # Status
     "Status": "status",
+    "Transaction Type": "transaction_type",
+    # Notes
     "Notes": "notes",
     "Memo": "notes",
+    # Age (days overdue — informational, not stored directly)
+    "Age": "age_days",
 }
 
 TERMS_MAP = {
@@ -180,10 +207,11 @@ async def import_netsuite_csv(
                 skipped += 1
                 continue
 
-            amount = _parse_amount(row.get("amount", 0))
-            amount_paid = _parse_amount(row.get("amount_paid", 0))
             balance_raw = row.get("balance")
-            balance = _parse_amount(balance_raw) if not pd.isna(balance_raw) else amount - amount_paid
+            balance = _parse_amount(balance_raw) if (balance_raw is not None and not pd.isna(balance_raw)) else 0.0
+            amount_raw = row.get("amount")
+            amount = _parse_amount(amount_raw) if (amount_raw is not None and not pd.isna(amount_raw)) else balance
+            amount_paid = _parse_amount(row.get("amount_paid", 0))
             due_date = _parse_date(row.get("due_date"))
             status_val = row.get("status")
             status = _map_status(status_val, balance, due_date)
