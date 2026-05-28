@@ -84,6 +84,40 @@ def _parse_netsuite_xml(content: bytes) -> pd.DataFrame:
 
     return pd.DataFrame(records)
 
+
+def _normalize_grouped_df(df: pd.DataFrame) -> pd.DataFrame:
+    """Handle NetSuite grouped xlsx exports where customer name appears in its own row
+    with NaN in all other columns, followed by invoice rows with NaN in the customer column."""
+    customer_col = next((c for c in df.columns if "customer" in c.lower() or c == "Customer:Project"), None)
+    doc_col = next((c for c in df.columns if "document" in c.lower() or "invoice" in c.lower()), None)
+    if customer_col is None or doc_col is None:
+        return df
+
+    # Forward-fill customer name from grouped header rows into invoice rows
+    current_customer = None
+    rows_to_keep = []
+    for _, row in df.iterrows():
+        customer_val = row[customer_col]
+        doc_val = row[doc_col]
+        customer_str = str(customer_val).strip() if pd.notna(customer_val) else ""
+        doc_str = str(doc_val).strip() if pd.notna(doc_val) else ""
+
+        # Skip total/subtotal rows
+        if customer_str.startswith("Total") or customer_str.startswith("Grand Total"):
+            continue
+        # Customer header row: has customer name but no document number
+        if customer_str and not doc_str:
+            current_customer = customer_str
+            continue
+        # Invoice row: fill in the customer name
+        if doc_str and current_customer:
+            row = row.copy()
+            row[customer_col] = current_customer
+        rows_to_keep.append(row)
+
+    return pd.DataFrame(rows_to_keep).reset_index(drop=True)
+
+
 router = APIRouter(prefix="/invoices", tags=["invoices"])
 
 NETSUITE_COLUMN_MAP = {
@@ -268,6 +302,7 @@ async def import_netsuite_csv(
             df = _parse_netsuite_xml(content)
         elif file.filename.endswith(".xlsx"):
             df = pd.read_excel(io.BytesIO(content), engine="openpyxl")
+            df = _normalize_grouped_df(df)
         elif file.filename.endswith(".xls"):
             df = pd.read_excel(io.BytesIO(content), engine="xlrd")
         else:
