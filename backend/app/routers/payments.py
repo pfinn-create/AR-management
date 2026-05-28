@@ -75,6 +75,22 @@ def get_payment(
     return p
 
 
+@router.delete("/{payment_id}", response_model=dict)
+def delete_payment(
+    payment_id: int,
+    db: Session = Depends(get_db),
+    user: User = Depends(current_user),
+):
+    p = db.query(Payment).filter(Payment.id == payment_id).first()
+    if not p:
+        raise HTTPException(status_code=404, detail="Payment not found")
+    assert_company_access(user, p.company_id)
+    db.query(RemittanceLine).filter(RemittanceLine.payment_id == payment_id).delete()
+    db.delete(p)
+    db.commit()
+    return {"deleted": payment_id}
+
+
 @router.post("/import/chase/{company_id}", response_model=dict)
 async def import_chase_csv(
     company_id: int,

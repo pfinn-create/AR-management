@@ -4,13 +4,14 @@ import { useCompany } from "../context/CompanyContext";
 import api from "../utils/api";
 import { Payment, RemittanceLine } from "../types";
 import { formatCurrency, formatDate, statusColor, confidenceIcon } from "../utils/formatters";
-import { Upload, Zap, CheckCircle, X, CalendarRange } from "lucide-react";
+import { Upload, Zap, CheckCircle, X, CalendarRange, Trash2 } from "lucide-react";
 import toast from "react-hot-toast";
 import clsx from "clsx";
 import DataFreshness from "../components/DataFreshness";
 
 function PaymentDetail({ payment, onClose }: { payment: Payment; onClose: () => void }) {
   const qc = useQueryClient();
+  const [confirmDelete, setConfirmDelete] = useState(false);
 
   const matchMut = useMutation({
     mutationFn: () => api.post(`/payments/${payment.id}/match`),
@@ -33,6 +34,16 @@ function PaymentDetail({ payment, onClose }: { payment: Payment; onClose: () => 
     },
   });
 
+  const deleteMut = useMutation({
+    mutationFn: () => api.delete(`/payments/${payment.id}`),
+    onSuccess: () => {
+      toast.success("Payment deleted");
+      qc.invalidateQueries({ queryKey: ["payments"] });
+      onClose();
+    },
+    onError: () => toast.error("Delete failed"),
+  });
+
   const approvedIds = payment.remittance_lines.filter(l => !l.is_approved).map(l => l.id);
 
   return (
@@ -43,7 +54,35 @@ function PaymentDetail({ payment, onClose }: { payment: Payment; onClose: () => 
             <h2 className="font-bold text-gray-900">Payment — {formatCurrency(Number(payment.amount))}</h2>
             <p className="text-xs text-gray-400">{payment.payer_name} · {formatDate(payment.payment_date)}</p>
           </div>
-          <button onClick={onClose} className="text-gray-400 hover:text-gray-600"><X className="w-5 h-5" /></button>
+          <div className="flex items-center gap-2">
+            {confirmDelete ? (
+              <div className="flex items-center gap-2">
+                <span className="text-xs text-red-600 font-medium">Delete this payment?</span>
+                <button
+                  onClick={() => deleteMut.mutate()}
+                  disabled={deleteMut.isPending}
+                  className="px-2.5 py-1 text-xs rounded-lg bg-red-600 text-white hover:bg-red-700 font-medium"
+                >
+                  {deleteMut.isPending ? "Deleting…" : "Yes, delete"}
+                </button>
+                <button
+                  onClick={() => setConfirmDelete(false)}
+                  className="px-2.5 py-1 text-xs rounded-lg border border-gray-300 text-gray-600 hover:bg-gray-50"
+                >
+                  Cancel
+                </button>
+              </div>
+            ) : (
+              <button
+                onClick={() => setConfirmDelete(true)}
+                className="text-gray-300 hover:text-red-500 transition-colors"
+                title="Delete payment"
+              >
+                <Trash2 className="w-4 h-4" />
+              </button>
+            )}
+            <button onClick={onClose} className="text-gray-400 hover:text-gray-600"><X className="w-5 h-5" /></button>
+          </div>
         </div>
         <div className="p-5 space-y-4 overflow-y-auto">
           <div className="grid grid-cols-2 gap-3 text-sm">
@@ -275,6 +314,7 @@ export default function Payments() {
                 <th className="px-4 py-3 font-medium">Source</th>
                 <th className="px-4 py-3 font-medium">Status</th>
                 <th className="px-4 py-3 font-medium">Lines</th>
+                <th className="px-4 py-3 font-medium w-8"></th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-50">
@@ -285,10 +325,10 @@ export default function Payments() {
                   if (toDate && d && d > toDate) return false;
                   return true;
                 });
-                if (isLoading) return <tr><td colSpan={8} className="text-center py-10 text-gray-400">Loading…</td></tr>;
-                if (filtered.length === 0) return <tr><td colSpan={8} className="text-center py-10 text-gray-400">No payments found</td></tr>;
+                if (isLoading) return <tr><td colSpan={9} className="text-center py-10 text-gray-400">Loading…</td></tr>;
+                if (filtered.length === 0) return <tr><td colSpan={9} className="text-center py-10 text-gray-400">No payments found</td></tr>;
                 return filtered.map((p) => (
-                  <tr key={p.id} className="table-row-hover" onClick={() => setSelected(p)}>
+                  <tr key={p.id} className="table-row-hover group" onClick={() => setSelected(p)}>
                     <td className="px-4 py-2.5 text-gray-500">{formatDate(p.payment_date)}</td>
                     <td className="px-4 py-2.5 font-medium text-gray-800">{p.payer_name || "—"}</td>
                     <td className="px-4 py-2.5 font-mono text-xs text-gray-500">{p.reference_number || "—"}</td>
@@ -297,6 +337,22 @@ export default function Payments() {
                     <td className="px-4 py-2.5 text-xs text-gray-400 capitalize">{p.source?.replace("_", " ") || "—"}</td>
                     <td className="px-4 py-2.5"><span className={`badge ${statusColor(p.status)}`}>{p.status}</span></td>
                     <td className="px-4 py-2.5 text-center text-gray-500">{p.remittance_lines.length}</td>
+                    <td className="px-4 py-2.5 text-center" onClick={(e) => e.stopPropagation()}>
+                      <button
+                        onClick={() => {
+                          if (confirm(`Delete payment from ${p.payer_name || "unknown"} (${formatCurrency(Number(p.amount))})?`)) {
+                            api.delete(`/payments/${p.id}`).then(() => {
+                              toast.success("Payment deleted");
+                              qc.invalidateQueries({ queryKey: ["payments", cid] });
+                            }).catch(() => toast.error("Delete failed"));
+                          }
+                        }}
+                        className="opacity-0 group-hover:opacity-100 text-gray-300 hover:text-red-500 transition-all"
+                        title="Delete payment"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    </td>
                   </tr>
                 ));
               })()}
