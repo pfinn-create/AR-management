@@ -121,6 +121,46 @@ def update_customer(
     return c
 
 
+@router.post("/sync/{company_id}")
+def sync_customers_from_invoices(
+    company_id: int,
+    db: Session = Depends(get_db),
+    user: User = Depends(current_user),
+):
+    """Create Customer records from existing invoice customer_name fields."""
+    assert_company_access(user, company_id)
+    from app.models.invoice import Invoice
+
+    invoices = db.query(Invoice).filter(
+        Invoice.company_id == company_id,
+        Invoice.customer_name.isnot(None),
+        Invoice.customer_name != "",
+    ).all()
+
+    customer_map: dict = {}
+    linked = 0
+    for inv in invoices:
+        name = (inv.customer_name or "").strip()
+        if not name:
+            continue
+        key = name.lower()
+        if key not in customer_map:
+            existing = db.query(Customer).filter(
+                Customer.company_id == company_id,
+                Customer.name == name,
+            ).first()
+            if not existing:
+                existing = Customer(company_id=company_id, name=name)
+                db.add(existing)
+                db.flush()
+            customer_map[key] = existing
+        inv.customer_id = customer_map[key].id
+        linked += 1
+
+    db.commit()
+    return {"customers_created": len(customer_map), "invoices_linked": linked}
+
+
 @router.post("/import/{company_id}", response_model=CustomerImportResult)
 async def import_customers_csv(
     company_id: int,

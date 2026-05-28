@@ -4,7 +4,7 @@ import { useCompany } from "../context/CompanyContext";
 import api from "../utils/api";
 import { Customer, Invoice } from "../types";
 import { formatCurrency, formatDate, statusColor } from "../utils/formatters";
-import { Upload, X, Mail, Phone } from "lucide-react";
+import { Upload, X, Mail, Phone, RefreshCw } from "lucide-react";
 import toast from "react-hot-toast";
 
 function CustomerDetail({ customer, onClose }: { customer: Customer; onClose: () => void }) {
@@ -92,6 +92,15 @@ export default function Customers() {
     enabled: !!cid,
   });
 
+  const syncMut = useMutation({
+    mutationFn: () => api.post(`/customers/sync/${cid}`),
+    onSuccess: (res) => {
+      toast.success(`Synced: ${res.data.customers_created} customers created, ${res.data.invoices_linked} invoices linked`);
+      qc.invalidateQueries({ queryKey: ["customers", cid] });
+    },
+    onError: () => toast.error("Sync failed"),
+  });
+
   const importMut = useMutation({
     mutationFn: (file: File) => {
       const fd = new FormData();
@@ -124,6 +133,10 @@ export default function Customers() {
         <div className="flex items-center gap-2">
           <input type="file" ref={fileRef} className="hidden" accept=".csv,.xlsx"
             onChange={(e) => e.target.files?.[0] && importMut.mutate(e.target.files[0])} />
+          <button onClick={() => syncMut.mutate()} disabled={syncMut.isPending} className="btn-secondary">
+            <RefreshCw className="w-4 h-4" />
+            {syncMut.isPending ? "Syncing…" : "Sync from Invoices"}
+          </button>
           <button onClick={() => fileRef.current?.click()} disabled={importMut.isPending} className="btn-secondary">
             <Upload className="w-4 h-4" />
             {importMut.isPending ? "Importing…" : "Import CSV"}
