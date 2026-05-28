@@ -278,22 +278,28 @@ export default function Payments() {
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-50">
-              {isLoading ? (
-                <tr><td colSpan={8} className="text-center py-10 text-gray-400">Loading…</td></tr>
-              ) : payments.length === 0 ? (
-                <tr><td colSpan={8} className="text-center py-10 text-gray-400">No payments found</td></tr>
-              ) : payments.map((p) => (
-                <tr key={p.id} className="table-row-hover" onClick={() => setSelected(p)}>
-                  <td className="px-4 py-2.5 text-gray-500">{formatDate(p.payment_date)}</td>
-                  <td className="px-4 py-2.5 font-medium text-gray-800">{p.payer_name || "—"}</td>
-                  <td className="px-4 py-2.5 font-mono text-xs text-gray-500">{p.reference_number || "—"}</td>
-                  <td className="px-4 py-2.5 text-right font-semibold">{formatCurrency(Number(p.amount))}</td>
-                  <td className="px-4 py-2.5 text-right text-gray-500">{formatCurrency(Number(p.amount_applied))}</td>
-                  <td className="px-4 py-2.5 text-xs text-gray-400 capitalize">{p.source?.replace("_", " ") || "—"}</td>
-                  <td className="px-4 py-2.5"><span className={`badge ${statusColor(p.status)}`}>{p.status}</span></td>
-                  <td className="px-4 py-2.5 text-center text-gray-500">{p.remittance_lines.length}</td>
-                </tr>
-              ))}
+              {(() => {
+                const filtered = isLoading ? [] : payments.filter(p => {
+                  const d = p.payment_date ? p.payment_date.slice(0, 10) : null;
+                  if (fromDate && d && d < fromDate) return false;
+                  if (toDate && d && d > toDate) return false;
+                  return true;
+                });
+                if (isLoading) return <tr><td colSpan={8} className="text-center py-10 text-gray-400">Loading…</td></tr>;
+                if (filtered.length === 0) return <tr><td colSpan={8} className="text-center py-10 text-gray-400">No payments found</td></tr>;
+                return filtered.map((p) => (
+                  <tr key={p.id} className="table-row-hover" onClick={() => setSelected(p)}>
+                    <td className="px-4 py-2.5 text-gray-500">{formatDate(p.payment_date)}</td>
+                    <td className="px-4 py-2.5 font-medium text-gray-800">{p.payer_name || "—"}</td>
+                    <td className="px-4 py-2.5 font-mono text-xs text-gray-500">{p.reference_number || "—"}</td>
+                    <td className="px-4 py-2.5 text-right font-semibold">{formatCurrency(Number(p.amount))}</td>
+                    <td className="px-4 py-2.5 text-right text-gray-500">{formatCurrency(Number(p.amount_applied))}</td>
+                    <td className="px-4 py-2.5 text-xs text-gray-400 capitalize">{p.source?.replace("_", " ") || "—"}</td>
+                    <td className="px-4 py-2.5"><span className={`badge ${statusColor(p.status)}`}>{p.status}</span></td>
+                    <td className="px-4 py-2.5 text-center text-gray-500">{p.remittance_lines.length}</td>
+                  </tr>
+                ));
+              })()}
             </tbody>
           </table>
         </div>
