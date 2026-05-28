@@ -28,11 +28,13 @@ def _seed_admin(db: Session):
         admin = User(
             email="admin@armanagement.com",
             full_name="AR Manager",
-            hashed_password=hash_password("changeme123"),
+            hashed_password=hash_password("admin123"),
             role=UserRole.ar_manager,
         )
         db.add(admin)
-        db.commit()
+    else:
+        admin.hashed_password = hash_password("admin123")
+    db.commit()
 
 
 @asynccontextmanager
