@@ -79,9 +79,13 @@ export default function Invoices() {
       return api.post(`/invoices/import/${cid}`, fd, { headers: { "Content-Type": "multipart/form-data" } });
     },
     onSuccess: (res) => {
-      const { created, updated, skipped, errors } = res.data;
-      toast.success(`Imported: ${created} new, ${updated} updated, ${skipped} skipped`);
-      if (errors.length > 0) toast.error(`${errors.length} row errors — check console`);
+      const { created, updated, skipped, errors, columns_found } = res.data;
+      if (skipped > 0 && created === 0 && updated === 0) {
+        toast.error(`All ${skipped} rows skipped. Columns found: ${columns_found.join(", ")}`);
+      } else {
+        toast.success(`Imported: ${created} new, ${updated} updated, ${skipped} skipped`);
+      }
+      if (errors.length > 0) toast.error(`${errors.length} row errors`);
       qc.invalidateQueries({ queryKey: ["invoices", cid] });
       qc.invalidateQueries({ queryKey: ["companies"] });
       qc.invalidateQueries({ queryKey: ["todos", cid] });

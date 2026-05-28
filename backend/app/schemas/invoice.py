@@ -49,3 +49,4 @@ class InvoiceImportResult(BaseModel):
     updated: int
     skipped: int
     errors: List[str] = []
+    columns_found: List[str] = []
