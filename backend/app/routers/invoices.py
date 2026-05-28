@@ -380,11 +380,47 @@ async def import_netsuite_csv(
 
     db.commit()
 
+    # Auto-create/link customers from imported invoices
+    _sync_customers_from_invoices(company_id, db)
+
     # Run aging agent to generate follow-ups and escalations
     from app.agents.aging_agent import run_aging_agent
     run_aging_agent(company_id, db)
 
     return InvoiceImportResult(created=created, updated=updated, skipped=skipped, errors=errors, columns_found=found_cols)
+
+
+def _sync_customers_from_invoices(company_id: int, db: Session):
+    """Upsert Customer records from invoice customer_name field and link invoices via customer_id."""
+    from app.models.customer import Customer
+
+    # Get all invoices without a customer_id that have a customer_name
+    invoices = db.query(Invoice).filter(
+        Invoice.company_id == company_id,
+        Invoice.customer_name.isnot(None),
+        Invoice.customer_name != "",
+    ).all()
+
+    # Build a name -> Customer map (case-insensitive upsert)
+    customer_map: dict[str, Customer] = {}
+    for inv in invoices:
+        name = (inv.customer_name or "").strip()
+        if not name:
+            continue
+        key = name.lower()
+        if key not in customer_map:
+            existing = db.query(Customer).filter(
+                Customer.company_id == company_id,
+                Customer.name == name,
+            ).first()
+            if not existing:
+                existing = Customer(company_id=company_id, name=name)
+                db.add(existing)
+                db.flush()  # get the id
+            customer_map[key] = existing
+        inv.customer_id = customer_map[key].id
+
+    db.commit()
 
 
 def _generate_overdue_todos(company_id: int, db: Session):
