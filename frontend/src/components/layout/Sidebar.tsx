@@ -4,7 +4,6 @@ import {
   Mail, CheckSquare, BarChart2, UserCog, Building2,
   AlertOctagon, Settings
 } from "lucide-react";
-import { useAuth } from "../../context/AuthContext";
 import clsx from "clsx";
 
 const navItems = [
@@ -16,11 +15,11 @@ const navItems = [
   { to: "/todos", icon: CheckSquare, label: "To-Do" },
   { to: "/disputes", icon: AlertOctagon, label: "Disputes" },
   { to: "/reports", icon: BarChart2, label: "Reports" },
+  { to: "/users", icon: UserCog, label: "Users" },
+  { to: "/settings", icon: Settings, label: "Settings" },
 ];
 
 export default function Sidebar() {
-  const { user } = useAuth();
-
   return (
     <aside className="w-56 bg-brand-900 flex flex-col shrink-0">
       <div className="px-4 py-5 flex items-center gap-2">
@@ -46,45 +45,7 @@ export default function Sidebar() {
             {label}
           </NavLink>
         ))}
-
-        {user?.role === "ar_manager" && (
-          <>
-            <NavLink
-              to="/users"
-              className={({ isActive }) =>
-                clsx(
-                  "flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors",
-                  isActive
-                    ? "bg-brand-700 text-white"
-                    : "text-brand-100 hover:bg-brand-800 hover:text-white"
-                )
-              }
-            >
-              <UserCog className="w-4 h-4 shrink-0" />
-              Users
-            </NavLink>
-            <NavLink
-              to="/settings"
-              className={({ isActive }) =>
-                clsx(
-                  "flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors",
-                  isActive
-                    ? "bg-brand-700 text-white"
-                    : "text-brand-100 hover:bg-brand-800 hover:text-white"
-                )
-              }
-            >
-              <Settings className="w-4 h-4 shrink-0" />
-              Settings
-            </NavLink>
-          </>
-        )}
       </nav>
-
-      <div className="px-4 pb-4 text-xs text-brand-300">
-        {user?.full_name}<br />
-        <span className="capitalize">{user?.role?.replace("_", " ")}</span>
-      </div>
     </aside>
   );
 }

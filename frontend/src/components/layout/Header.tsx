@@ -1,12 +1,10 @@
-import { ChevronDown, LogOut, RefreshCw } from "lucide-react";
+import { ChevronDown } from "lucide-react";
 import { useState } from "react";
-import { useAuth } from "../../context/AuthContext";
 import { useCompany } from "../../context/CompanyContext";
 import { formatCurrency } from "../../utils/formatters";
 import clsx from "clsx";
 
 export default function Header() {
-  const { logout } = useAuth();
   const { companies, activeCompany, setActiveCompany } = useCompany();
   const [open, setOpen] = useState(false);
 
@@ -79,13 +77,6 @@ export default function Header() {
           </div>
         )}
 
-        <button
-          onClick={logout}
-          className="flex items-center gap-1.5 text-xs text-gray-500 hover:text-gray-700 transition-colors"
-        >
-          <LogOut className="w-4 h-4" />
-          Logout
-        </button>
       </div>
     </header>
   );

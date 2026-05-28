@@ -1,7 +1,6 @@
 import { useState, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useCompany } from "../context/CompanyContext";
-import { useAuth } from "../context/AuthContext";
 import api from "../utils/api";
 import { CompanySettings } from "../types";
 import { Save, Plus, X, Settings } from "lucide-react";
@@ -9,7 +8,6 @@ import toast from "react-hot-toast";
 
 export default function CompanySettingsPage() {
   const { activeCompany } = useCompany();
-  const { user } = useAuth();
   const qc = useQueryClient();
   const cid = activeCompany?.id;
 
@@ -57,7 +55,6 @@ export default function CompanySettingsPage() {
   };
 
   if (!activeCompany) return <p className="text-gray-400">Select a company first.</p>;
-  if (user?.role !== "ar_manager") return <p className="text-gray-400">Only AR Managers can view settings.</p>;
 
   return (
     <div className="space-y-6 max-w-2xl">

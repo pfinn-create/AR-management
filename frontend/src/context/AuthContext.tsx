@@ -1,71 +1,38 @@
-import { createContext, useContext, useState, useEffect, ReactNode } from "react";
-import api from "../utils/api";
+import { createContext, useContext, ReactNode } from "react";
 import { User } from "../types";
 
 interface AuthContextValue {
-  user: User | null;
-  token: string | null;
-  login: (email: string, password: string) => Promise<void>;
-  logout: () => void;
+  user: User;
+  isLoading: false;
   refreshUser: () => Promise<void>;
-  isLoading: boolean;
 }
 
-const AuthContext = createContext<AuthContextValue | null>(null);
+const defaultUser: User = {
+  id: 1,
+  email: "admin@armanagement.com",
+  full_name: "AR Manager",
+  role: "ar_manager",
+  is_active: true,
+  email_consent: true,
+  email_consent_at: new Date().toISOString(),
+  company_ids: [],
+  created_at: new Date().toISOString(),
+};
+
+const AuthContext = createContext<AuthContextValue>({
+  user: defaultUser,
+  isLoading: false,
+  refreshUser: async () => {},
+});
 
 export function AuthProvider({ children }: { children: ReactNode }) {
-  const [user, setUser] = useState<User | null>(null);
-  const [token, setToken] = useState<string | null>(localStorage.getItem("ar_token"));
-  const [isLoading, setIsLoading] = useState(true);
-
-  // On page load only: if a stored token exists, verify it and restore the user session
-  useEffect(() => {
-    const stored = localStorage.getItem("ar_token");
-    if (stored) {
-      api.get("/users/me")
-        .then((res) => setUser(res.data))
-        .catch(() => {
-          localStorage.removeItem("ar_token");
-          setToken(null);
-        })
-        .finally(() => setIsLoading(false));
-    } else {
-      setIsLoading(false);
-    }
-  }, []);
-
-  const login = async (email: string, password: string) => {
-    const res = await api.post("/auth/login", { email, password });
-    const { access_token, user: u } = res.data;
-    localStorage.setItem("ar_token", access_token);
-    setToken(access_token);
-    setUser(u);
-  };
-
-  const logout = () => {
-    localStorage.removeItem("ar_token");
-    setToken(null);
-    setUser(null);
-  };
-
-  const refreshUser = async () => {
-    try {
-      const res = await api.get("/users/me");
-      setUser(res.data);
-    } catch {
-      // ignore
-    }
-  };
-
   return (
-    <AuthContext.Provider value={{ user, token, login, logout, refreshUser, isLoading }}>
+    <AuthContext.Provider value={{ user: defaultUser, isLoading: false, refreshUser: async () => {} }}>
       {children}
     </AuthContext.Provider>
   );
 }
 
 export function useAuth() {
-  const ctx = useContext(AuthContext);
-  if (!ctx) throw new Error("useAuth must be inside AuthProvider");
-  return ctx;
+  return useContext(AuthContext);
 }

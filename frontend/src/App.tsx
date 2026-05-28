@@ -1,6 +1,4 @@
 import { Routes, Route, Navigate } from "react-router-dom";
-import { useAuth } from "./context/AuthContext";
-import Login from "./pages/Login";
 import Layout from "./components/layout/Layout";
 import Dashboard from "./pages/Dashboard";
 import Invoices from "./pages/Invoices";
@@ -13,39 +11,23 @@ import Users from "./pages/Users";
 import Disputes from "./pages/Disputes";
 import CompanySettings from "./pages/CompanySettings";
 
-function PrivateRoute({ children }: { children: React.ReactNode }) {
-  const { user, isLoading } = useAuth();
-  if (isLoading) return <div className="flex h-screen items-center justify-center text-gray-400">Loading...</div>;
-  if (!user) return <Navigate to="/login" replace />;
-  return <>{children}</>;
-}
-
 export default function App() {
   return (
-    <Routes>
-      <Route path="/login" element={<Login />} />
-      <Route
-        path="/*"
-        element={
-          <PrivateRoute>
-            <Layout>
-              <Routes>
-                <Route index element={<Navigate to="/dashboard" replace />} />
-                <Route path="dashboard" element={<Dashboard />} />
-                <Route path="invoices" element={<Invoices />} />
-                <Route path="customers" element={<Customers />} />
-                <Route path="payments" element={<Payments />} />
-                <Route path="emails" element={<Emails />} />
-                <Route path="todos" element={<Todos />} />
-                <Route path="reports" element={<Reports />} />
-                <Route path="users" element={<Users />} />
-                <Route path="disputes" element={<Disputes />} />
-                <Route path="settings" element={<CompanySettings />} />
-              </Routes>
-            </Layout>
-          </PrivateRoute>
-        }
-      />
-    </Routes>
+    <Layout>
+      <Routes>
+        <Route index element={<Navigate to="/dashboard" replace />} />
+        <Route path="dashboard" element={<Dashboard />} />
+        <Route path="invoices" element={<Invoices />} />
+        <Route path="customers" element={<Customers />} />
+        <Route path="payments" element={<Payments />} />
+        <Route path="emails" element={<Emails />} />
+        <Route path="todos" element={<Todos />} />
+        <Route path="disputes" element={<Disputes />} />
+        <Route path="reports" element={<Reports />} />
+        <Route path="users" element={<Users />} />
+        <Route path="settings" element={<CompanySettings />} />
+        <Route path="*" element={<Navigate to="/dashboard" replace />} />
+      </Routes>
+    </Layout>
   );
 }
