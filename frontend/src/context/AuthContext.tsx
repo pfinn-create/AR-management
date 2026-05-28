@@ -18,8 +18,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [token, setToken] = useState<string | null>(localStorage.getItem("ar_token"));
   const [isLoading, setIsLoading] = useState(true);
 
+  // On page load only: if a stored token exists, verify it and restore the user session
   useEffect(() => {
-    if (token) {
+    const stored = localStorage.getItem("ar_token");
+    if (stored) {
       api.get("/users/me")
         .then((res) => setUser(res.data))
         .catch(() => {
@@ -30,7 +32,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     } else {
       setIsLoading(false);
     }
-  }, [token]);
+  }, []);
 
   const login = async (email: string, password: string) => {
     const res = await api.post("/auth/login", { email, password });
