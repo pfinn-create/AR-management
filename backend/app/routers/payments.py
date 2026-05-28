@@ -170,14 +170,16 @@ async def import_chase_pdf(
     content = await file.read()
     transactions = _parse_chase_pdf(content)
 
-    created = skipped = 0
+    from app.models.invoice import Invoice
+    from app.models.payment import RemittanceLine, MatchConfidence
+
+    created = skipped = auto_matched = 0
     for txn in transactions:
         amt = txn.get("amount", 0)
         if amt <= 0:
             skipped += 1
             continue
 
-        ref = txn.get("reference_number") or None
         pay_date = txn.get("payment_date")
 
         existing = db.query(Payment).filter(
@@ -197,77 +199,174 @@ async def import_chase_pdf(
             amount=amt,
             currency="USD",
             payer_name=txn.get("payer_name"),
-            reference_number=ref,
+            reference_number=txn.get("reference_number"),
             memo=txn.get("memo"),
             source="chase_pdf",
             status=PaymentStatus.pending_review,
         )
         db.add(p)
+        db.flush()
+
+        # Auto-create remittance lines from embedded invoice references
+        inv_refs = txn.get("invoice_refs", [])
+        for inv_num in inv_refs:
+            inv = db.query(Invoice).filter(
+                Invoice.company_id == company_id,
+                Invoice.invoice_number == inv_num,
+            ).first()
+            line = RemittanceLine(
+                payment_id=p.id,
+                invoice_id=inv.id if inv else None,
+                invoice_number_raw=inv_num,
+                amount=amt if len(inv_refs) == 1 else None,
+                match_confidence=MatchConfidence.high if inv else MatchConfidence.medium,
+                notes="Auto-matched from bank remittance data" if inv else "Invoice not found in system",
+            )
+            db.add(line)
+            if inv:
+                auto_matched += 1
+
+        if inv_refs:
+            p.status = PaymentStatus.matched if any(
+                db.query(Invoice).filter(Invoice.company_id == company_id, Invoice.invoice_number == r).first()
+                for r in inv_refs
+            ) else PaymentStatus.pending_review
+
         created += 1
 
     db.commit()
-    return {"created": created, "skipped": skipped, "total_parsed": len(transactions)}
+    return {"created": created, "skipped": skipped, "total_parsed": len(transactions), "auto_matched": auto_matched}
 
 
 def _parse_chase_pdf(content: bytes) -> list[dict]:
     """
-    Extract credit transactions from a Chase PDF statement or transaction export.
-    Handles both the full monthly statement layout and the filtered transaction export.
+    Parse a JPMorgan Chase Balance and Transaction Report PDF.
+    Extracts credit transactions and remittance data (invoice references).
     """
     import pdfplumber
+    from dateutil.parser import parse as dateparse
 
-    transactions = []
-    date_pattern = re.compile(r"(\d{2}/\d{2})")
-    amount_pattern = re.compile(r"\$([\d,]+\.\d{2})")
+    # Regex patterns
+    txn_line = re.compile(
+        r"^(\d{2}/\d{2}/\d{4})\s+(\d{2}/\d{2}/\d{4})\s+(.+?)\s{2,}(\S+)\s+(\S+)\s+([\d,]+\.\d{2})(?:\s+([\d,]+\.\d{2}))?\s+([\d,()]+\.\d{2})"
+    )
+    # Simpler fallback: date date description ... amount amount balance
+    txn_simple = re.compile(r"^(\d{2}/\d{2}/\d{4})\s+(\d{2}/\d{2}/\d{4})\s+(.+)")
+    amount_re = re.compile(r"([\d,]+\.\d{2})")
+    inv_ref_re = re.compile(r"RMR\*IV\*([A-Za-z0-9\-]+)")
+    orig_name_re = re.compile(r"ORIG CO NAME:\s*(.+)")
+    ind_name_re = re.compile(r"IND NAME:\s*(.+)")
+    cust_ref_re = re.compile(r"Customer Ref\.\s*(\S+)")
 
+    # Debit keywords — skip these transactions
+    DEBIT_KEYWORDS = [
+        "DEBIT", "DB ", "DRAWDOWN", "CASH CNTRN", "ACH SETTLEMENT",
+        "FPRS", "CORP PAY", "PRFUND", "CONCENTRATION",
+    ]
+
+    all_text = []
     with pdfplumber.open(io.BytesIO(content)) as pdf:
         for page in pdf.pages:
             text = page.extract_text() or ""
-            lines = text.split("\n")
+            all_text.append(text)
 
-            for i, line in enumerate(lines):
-                # Look for lines with a date at the start and a positive dollar amount
-                date_match = date_pattern.match(line.strip())
-                if not date_match:
-                    continue
+    full_text = "\n".join(all_text)
+    lines = full_text.split("\n")
 
-                # Try to extract amount — credits appear as positive in Chase exports
-                amounts = amount_pattern.findall(line)
-                if not amounts:
-                    continue
+    transactions = []
+    i = 0
+    while i < len(lines):
+        line = lines[i].strip()
 
-                amount_str = amounts[-1].replace(",", "")
-                try:
-                    amount = float(amount_str)
-                except ValueError:
-                    continue
+        # Match a transaction start line (two full dates)
+        m = txn_simple.match(line)
+        if m:
+            tran_date_str = m.group(1)
+            description = m.group(3).strip()
 
-                # Skip if this looks like a debit (negative context clue words)
-                line_lower = line.lower()
-                if any(kw in line_lower for kw in ["purchase", "payment to", "atm", "fee", "interest"]):
-                    continue
+            # Skip debit transactions
+            desc_upper = description.upper()
+            if any(kw in desc_upper for kw in DEBIT_KEYWORDS):
+                i += 1
+                continue
+            # Also skip lines that are clearly debits by keyword in full line
+            if any(kw in line.upper() for kw in ["DEBIT", " DB ", "DRAWDOWN"]):
+                i += 1
+                continue
 
-                # Extract description (everything between date and amount)
-                desc = re.sub(r"\d{2}/\d{2}", "", line)
-                desc = amount_pattern.sub("", desc).strip()
-                desc = re.sub(r"\s+", " ", desc).strip()
+            # Collect subsequent detail lines until next transaction or page header
+            detail_lines = []
+            j = i + 1
+            while j < len(lines):
+                next_line = lines[j].strip()
+                # Stop at next transaction line or page break markers
+                if txn_simple.match(next_line) or next_line.startswith("Balance and Transaction"):
+                    break
+                if next_line:
+                    detail_lines.append(next_line)
+                j += 1
 
-                # Try to parse the date (Chase uses MM/DD format — assume current year)
-                try:
-                    from dateutil.parser import parse as dateparse
-                    pay_date = dateparse(date_match.group(1)).replace(
-                        year=datetime.now().year, tzinfo=timezone.utc
-                    )
-                except Exception:
-                    pay_date = None
+            detail_block = " ".join(detail_lines)
 
-                transactions.append({
-                    "payment_date": pay_date,
-                    "payer_name": desc[:255] if desc else "Chase PDF Import",
-                    "amount": amount,
-                    "memo": f"PDF import: {line.strip()[:200]}",
-                    "reference_number": None,
-                })
+            # Extract amounts from the transaction line
+            amounts = [float(a.replace(",", "")) for a in amount_re.findall(line)]
+            if not amounts:
+                i += 1
+                continue
+
+            # For credit transactions: Credit Amount is first, Balance is last
+            # We take the first non-balance amount as the credit amount
+            # Balance is the last number; credit is the second-to-last (or only) number
+            if len(amounts) >= 2:
+                credit_amount = amounts[-2]
+                balance = amounts[-1]
+            else:
+                credit_amount = amounts[0]
+
+            if credit_amount <= 0:
+                i = j
+                continue
+
+            # Extract payer name from detail lines
+            payer = description
+            orig_match = orig_name_re.search(detail_block)
+            ind_match = ind_name_re.search(detail_block)
+            if orig_match:
+                payer = orig_match.group(1).strip()[:255]
+            elif ind_match:
+                payer = ind_match.group(1).strip()[:255]
+
+            # Extract invoice references from RMR remittance data
+            inv_refs = inv_ref_re.findall(detail_block)
+
+            # Extract customer reference number from the main line
+            parts = line.split()
+            customer_ref = None
+            # Customer ref is typically after the description and before bank ref
+            # It's a standalone alphanumeric token
+            for part in parts[3:]:
+                if re.match(r'^[A-Za-z0-9]{6,}$', part) and not re.match(r'^\d{2}/\d{2}/\d{4}$', part):
+                    customer_ref = part
+                    break
+
+            try:
+                pay_date = dateparse(tran_date_str).replace(tzinfo=timezone.utc)
+            except Exception:
+                pay_date = None
+
+            transactions.append({
+                "payment_date": pay_date,
+                "payer_name": payer,
+                "amount": credit_amount,
+                "reference_number": customer_ref,
+                "memo": description,
+                "invoice_refs": inv_refs,  # extracted invoice numbers for auto-matching
+            })
+
+            i = j
+            continue
+
+        i += 1
 
     return transactions
 

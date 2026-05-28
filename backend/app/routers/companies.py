@@ -102,3 +102,23 @@ def update_company(
     db.commit()
     db.refresh(c)
     return c
+
+
+@router.get("/{company_id}/freshness")
+def get_data_freshness(
+    company_id: int,
+    db: Session = Depends(get_db),
+    user: User = Depends(current_user),
+):
+    from app.models.payment import Payment
+    from app.models.customer import Customer
+
+    inv_last = db.query(func.max(Invoice.imported_at)).filter(Invoice.company_id == company_id).scalar()
+    pay_last = db.query(func.max(Payment.created_at)).filter(Payment.company_id == company_id).scalar()
+    cust_last = db.query(func.max(Customer.created_at)).filter(Customer.company_id == company_id).scalar()
+
+    return {
+        "invoices_last_imported": inv_last.isoformat() if inv_last else None,
+        "payments_last_imported": pay_last.isoformat() if pay_last else None,
+        "customers_last_synced": cust_last.isoformat() if cust_last else None,
+    }

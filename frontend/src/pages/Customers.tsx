@@ -6,6 +6,7 @@ import { Customer, Invoice } from "../types";
 import { formatCurrency, formatDate, statusColor } from "../utils/formatters";
 import { Upload, X, Mail, Phone, RefreshCw } from "lucide-react";
 import toast from "react-hot-toast";
+import DataFreshness from "../components/DataFreshness";
 
 function CustomerDetail({ customer, onClose }: { customer: Customer; onClose: () => void }) {
   const { activeCompany } = useCompany();
@@ -190,7 +191,10 @@ export default function Customers() {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-xl font-bold text-gray-900">Customers</h1>
-          <p className="text-xs text-gray-400">{activeCompany.name}</p>
+          <div className="flex items-center gap-3 mt-0.5">
+            <p className="text-xs text-gray-400">{activeCompany.name}</p>
+            <DataFreshness show={["customers_last_synced"]} />
+          </div>
         </div>
         <div className="flex items-center gap-2">
           <input type="file" ref={fileRef} className="hidden" accept=".csv,.xlsx"
