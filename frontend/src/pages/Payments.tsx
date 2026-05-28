@@ -174,6 +174,7 @@ export default function Payments() {
   const [selected, setSelected] = useState<Payment | null>(null);
   const [fromDate, setFromDate] = useState("");
   const [toDate, setToDate] = useState("");
+  const [checkedIds, setCheckedIds] = useState<Set<number>>(new Set());
   const csvRef = useRef<HTMLInputElement>(null);
   const pdfRef = useRef<HTMLInputElement>(null);
   const qc = useQueryClient();
@@ -217,6 +218,26 @@ export default function Payments() {
       qc.invalidateQueries({ queryKey: ["freshness", cid] });
     },
     onError: () => toast.error("PDF import failed"),
+  });
+
+  const bulkDeleteMut = useMutation({
+    mutationFn: (ids: number[]) => api.delete("/payments/bulk", { data: ids }),
+    onSuccess: (_, ids) => {
+      toast.success(`Deleted ${ids.length} payment${ids.length !== 1 ? "s" : ""}`);
+      setCheckedIds(new Set());
+      qc.invalidateQueries({ queryKey: ["payments", cid] });
+    },
+    onError: () => toast.error("Bulk delete failed"),
+  });
+
+  const deleteAllMut = useMutation({
+    mutationFn: () => api.delete(`/payments/all/${cid}`),
+    onSuccess: (res) => {
+      toast.success(`Deleted all ${res.data.deleted} payments`);
+      setCheckedIds(new Set());
+      qc.invalidateQueries({ queryKey: ["payments", cid] });
+    },
+    onError: () => toast.error("Delete all failed"),
   });
 
   const STATUS_OPTS = [
@@ -301,11 +322,54 @@ export default function Payments() {
         ))}
       </div>
 
+      {checkedIds.size > 0 && (
+        <div className="flex items-center gap-3 px-4 py-2.5 bg-red-50 border border-red-100 rounded-xl text-sm">
+          <span className="text-red-700 font-medium">{checkedIds.size} selected</span>
+          <button
+            onClick={() => {
+              if (confirm(`Delete ${checkedIds.size} payment${checkedIds.size !== 1 ? "s" : ""}?`)) {
+                bulkDeleteMut.mutate(Array.from(checkedIds));
+              }
+            }}
+            disabled={bulkDeleteMut.isPending}
+            className="px-3 py-1 text-xs rounded-lg bg-red-600 text-white hover:bg-red-700 font-medium"
+          >
+            {bulkDeleteMut.isPending ? "Deleting…" : "Delete selected"}
+          </button>
+          <button onClick={() => setCheckedIds(new Set())} className="text-xs text-red-400 hover:text-red-600">
+            Clear selection
+          </button>
+          <div className="flex-1" />
+          <button
+            onClick={() => {
+              if (confirm("Delete ALL payments for this company? This cannot be undone.")) {
+                deleteAllMut.mutate();
+              }
+            }}
+            disabled={deleteAllMut.isPending}
+            className="px-3 py-1 text-xs rounded-lg border border-red-300 text-red-600 hover:bg-red-100"
+          >
+            {deleteAllMut.isPending ? "Deleting…" : "Delete all payments"}
+          </button>
+        </div>
+      )}
+
       <div className="card p-0 overflow-hidden">
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead className="bg-gray-50 border-b border-gray-200">
               <tr className="text-left text-xs text-gray-400">
+                <th className="px-4 py-3 w-8">
+                  <input
+                    type="checkbox"
+                    className="rounded"
+                    checked={checkedIds.size > 0 && payments.every(p => checkedIds.has(p.id))}
+                    onChange={(e) => {
+                      if (e.target.checked) setCheckedIds(new Set(payments.map(p => p.id)));
+                      else setCheckedIds(new Set());
+                    }}
+                  />
+                </th>
                 <th className="px-4 py-3 font-medium">Date</th>
                 <th className="px-4 py-3 font-medium">Payer</th>
                 <th className="px-4 py-3 font-medium">Reference</th>
@@ -325,10 +389,22 @@ export default function Payments() {
                   if (toDate && d && d > toDate) return false;
                   return true;
                 });
-                if (isLoading) return <tr><td colSpan={9} className="text-center py-10 text-gray-400">Loading…</td></tr>;
-                if (filtered.length === 0) return <tr><td colSpan={9} className="text-center py-10 text-gray-400">No payments found</td></tr>;
+                if (isLoading) return <tr><td colSpan={10} className="text-center py-10 text-gray-400">Loading…</td></tr>;
+                if (filtered.length === 0) return <tr><td colSpan={10} className="text-center py-10 text-gray-400">No payments found</td></tr>;
                 return filtered.map((p) => (
-                  <tr key={p.id} className="table-row-hover group" onClick={() => setSelected(p)}>
+                  <tr key={p.id} className={clsx("table-row-hover group", checkedIds.has(p.id) && "bg-red-50")} onClick={() => setSelected(p)}>
+                    <td className="px-4 py-2.5" onClick={(e) => e.stopPropagation()}>
+                      <input
+                        type="checkbox"
+                        className="rounded"
+                        checked={checkedIds.has(p.id)}
+                        onChange={(e) => {
+                          const next = new Set(checkedIds);
+                          e.target.checked ? next.add(p.id) : next.delete(p.id);
+                          setCheckedIds(next);
+                        }}
+                      />
+                    </td>
                     <td className="px-4 py-2.5 text-gray-500">{formatDate(p.payment_date)}</td>
                     <td className="px-4 py-2.5 font-medium text-gray-800">{p.payer_name || "—"}</td>
                     <td className="px-4 py-2.5 font-mono text-xs text-gray-500">{p.reference_number || "—"}</td>

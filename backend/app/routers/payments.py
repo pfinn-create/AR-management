@@ -75,6 +75,36 @@ def get_payment(
     return p
 
 
+@router.delete("/bulk", response_model=dict)
+def bulk_delete_payments(
+    ids: List[int],
+    db: Session = Depends(get_db),
+    user: User = Depends(current_user),
+):
+    payments = db.query(Payment).filter(Payment.id.in_(ids)).all()
+    for p in payments:
+        assert_company_access(user, p.company_id)
+        db.query(RemittanceLine).filter(RemittanceLine.payment_id == p.id).delete()
+        db.delete(p)
+    db.commit()
+    return {"deleted": len(payments)}
+
+
+@router.delete("/all/{company_id}", response_model=dict)
+def delete_all_payments(
+    company_id: int,
+    db: Session = Depends(get_db),
+    user: User = Depends(current_user),
+):
+    assert_company_access(user, company_id)
+    payments = db.query(Payment).filter(Payment.company_id == company_id).all()
+    for p in payments:
+        db.query(RemittanceLine).filter(RemittanceLine.payment_id == p.id).delete()
+        db.delete(p)
+    db.commit()
+    return {"deleted": len(payments)}
+
+
 @router.delete("/{payment_id}", response_model=dict)
 def delete_payment(
     payment_id: int,
