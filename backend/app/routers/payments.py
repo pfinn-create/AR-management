@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Query
+from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Query, Body
 from sqlalchemy.orm import Session
 from typing import List, Optional
 from datetime import datetime, timezone, date
@@ -77,7 +77,7 @@ def get_payment(
 
 @router.delete("/bulk", response_model=dict)
 def bulk_delete_payments(
-    ids: List[int],
+    ids: List[int] = Body(...),
     db: Session = Depends(get_db),
     user: User = Depends(current_user),
 ):
