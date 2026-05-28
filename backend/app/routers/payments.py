@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Query
 from sqlalchemy.orm import Session
 from typing import List, Optional
-from datetime import datetime, timezone
+from datetime import datetime, timezone, date
 import pandas as pd
 import io
 import re
@@ -79,6 +79,8 @@ def get_payment(
 async def import_chase_csv(
     company_id: int,
     file: UploadFile = File(...),
+    from_date: Optional[date] = Query(None),
+    to_date: Optional[date] = Query(None),
     db: Session = Depends(get_db),
     user: User = Depends(current_user),
 ):
@@ -106,6 +108,14 @@ async def import_chase_csv(
             skipped += 1
             continue
 
+        pay_date = _parse_date(row.get("payment_date"))
+        if from_date and pay_date and pay_date.date() < from_date:
+            skipped += 1
+            continue
+        if to_date and pay_date and pay_date.date() > to_date:
+            skipped += 1
+            continue
+
         ref = str(row.get("reference_number", "")).strip() or None
         txn_id = str(row.get("bank_transaction_id", "")).strip() or None
 
@@ -120,7 +130,7 @@ async def import_chase_csv(
             existing = db.query(Payment).filter(
                 Payment.company_id == company_id,
                 Payment.reference_number == ref,
-                Payment.payment_date == _parse_date(row.get("payment_date")),
+                Payment.payment_date == pay_date,
             ).first()
 
         if existing:
@@ -129,7 +139,7 @@ async def import_chase_csv(
 
         p = Payment(
             company_id=company_id,
-            payment_date=_parse_date(row.get("payment_date")),
+            payment_date=pay_date,
             amount=amt,
             currency="USD",
             payer_name=str(row.get("payer_name", "")).strip() or None,
@@ -156,6 +166,8 @@ async def import_chase_csv(
 async def import_chase_pdf(
     company_id: int,
     file: UploadFile = File(...),
+    from_date: Optional[date] = Query(None),
+    to_date: Optional[date] = Query(None),
     db: Session = Depends(get_db),
     user: User = Depends(current_user),
 ):
@@ -181,6 +193,12 @@ async def import_chase_pdf(
             continue
 
         pay_date = txn.get("payment_date")
+        if from_date and pay_date and pay_date.date() < from_date:
+            skipped += 1
+            continue
+        if to_date and pay_date and pay_date.date() > to_date:
+            skipped += 1
+            continue
 
         existing = db.query(Payment).filter(
             Payment.company_id == company_id,

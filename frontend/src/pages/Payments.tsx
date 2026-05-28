@@ -4,7 +4,7 @@ import { useCompany } from "../context/CompanyContext";
 import api from "../utils/api";
 import { Payment, RemittanceLine } from "../types";
 import { formatCurrency, formatDate, statusColor, confidenceIcon } from "../utils/formatters";
-import { Upload, Zap, CheckCircle, X } from "lucide-react";
+import { Upload, Zap, CheckCircle, X, CalendarRange } from "lucide-react";
 import toast from "react-hot-toast";
 import clsx from "clsx";
 import DataFreshness from "../components/DataFreshness";
@@ -133,11 +133,16 @@ export default function Payments() {
   const { activeCompany } = useCompany();
   const [statusFilter, setStatusFilter] = useState("");
   const [selected, setSelected] = useState<Payment | null>(null);
+  const [fromDate, setFromDate] = useState("");
+  const [toDate, setToDate] = useState("");
   const csvRef = useRef<HTMLInputElement>(null);
   const pdfRef = useRef<HTMLInputElement>(null);
   const qc = useQueryClient();
 
   const cid = activeCompany?.id;
+
+  const dateParams = [fromDate ? `from_date=${fromDate}` : "", toDate ? `to_date=${toDate}` : ""]
+    .filter(Boolean).join("&");
 
   const { data: payments = [], isLoading } = useQuery<Payment[]>({
     queryKey: ["payments", cid, statusFilter],
@@ -149,11 +154,13 @@ export default function Payments() {
     mutationFn: (file: File) => {
       const fd = new FormData();
       fd.append("file", file);
-      return api.post(`/payments/import/chase/${cid}`, fd, { headers: { "Content-Type": "multipart/form-data" } });
+      const url = `/payments/import/chase/${cid}${dateParams ? `?${dateParams}` : ""}`;
+      return api.post(url, fd, { headers: { "Content-Type": "multipart/form-data" } });
     },
     onSuccess: (res) => {
-      toast.success(`Chase CSV import: ${res.data.created} payments added`);
+      toast.success(`Chase CSV import: ${res.data.created} added, ${res.data.skipped} skipped`);
       qc.invalidateQueries({ queryKey: ["payments", cid] });
+      qc.invalidateQueries({ queryKey: ["freshness", cid] });
     },
     onError: () => toast.error("CSV import failed"),
   });
@@ -162,11 +169,13 @@ export default function Payments() {
     mutationFn: (file: File) => {
       const fd = new FormData();
       fd.append("file", file);
-      return api.post(`/payments/import/chase-pdf/${cid}`, fd, { headers: { "Content-Type": "multipart/form-data" } });
+      const url = `/payments/import/chase-pdf/${cid}${dateParams ? `?${dateParams}` : ""}`;
+      return api.post(url, fd, { headers: { "Content-Type": "multipart/form-data" } });
     },
     onSuccess: (res) => {
-      toast.success(`Chase PDF import: ${res.data.created} payments added`);
+      toast.success(`Chase PDF import: ${res.data.created} added, ${res.data.skipped} skipped`);
       qc.invalidateQueries({ queryKey: ["payments", cid] });
+      qc.invalidateQueries({ queryKey: ["freshness", cid] });
     },
     onError: () => toast.error("PDF import failed"),
   });
@@ -191,7 +200,36 @@ export default function Payments() {
             <DataFreshness show={["payments_last_imported"]} />
           </div>
         </div>
-        <div className="flex gap-2">
+        <div className="flex items-center gap-2">
+          {/* Date range filter */}
+          <div className="flex items-center gap-1.5 bg-gray-50 border border-gray-200 rounded-lg px-3 py-1.5">
+            <CalendarRange className="w-3.5 h-3.5 text-gray-400 shrink-0" />
+            <input
+              type="date"
+              value={fromDate}
+              onChange={(e) => setFromDate(e.target.value)}
+              className="text-xs bg-transparent border-none outline-none text-gray-600 w-32"
+              title="From date"
+            />
+            <span className="text-gray-300 text-xs">–</span>
+            <input
+              type="date"
+              value={toDate}
+              onChange={(e) => setToDate(e.target.value)}
+              className="text-xs bg-transparent border-none outline-none text-gray-600 w-32"
+              title="To date"
+            />
+            {(fromDate || toDate) && (
+              <button
+                onClick={() => { setFromDate(""); setToDate(""); }}
+                className="text-gray-400 hover:text-gray-600 ml-1"
+                title="Clear dates"
+              >
+                <X className="w-3 h-3" />
+              </button>
+            )}
+          </div>
+
           <input type="file" ref={csvRef} className="hidden" accept=".csv,.xlsx"
             onChange={(e) => e.target.files?.[0] && importCsvMut.mutate(e.target.files[0])} />
           <input type="file" ref={pdfRef} className="hidden" accept=".pdf"
