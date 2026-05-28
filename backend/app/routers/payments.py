@@ -280,22 +280,19 @@ def _parse_chase_pdf(content: bytes) -> list[dict]:
     import pdfplumber
     from dateutil.parser import parse as dateparse
 
-    # Regex patterns
-    txn_line = re.compile(
-        r"^(\d{2}/\d{2}/\d{4})\s+(\d{2}/\d{2}/\d{4})\s+(.+?)\s{2,}(\S+)\s+(\S+)\s+([\d,]+\.\d{2})(?:\s+([\d,]+\.\d{2}))?\s+([\d,()]+\.\d{2})"
-    )
-    # Simpler fallback: date date description ... amount amount balance
     txn_simple = re.compile(r"^(\d{2}/\d{2}/\d{4})\s+(\d{2}/\d{2}/\d{4})\s+(.+)")
     amount_re = re.compile(r"([\d,]+\.\d{2})")
     inv_ref_re = re.compile(r"RMR\*IV\*([A-Za-z0-9\-]+)")
-    orig_name_re = re.compile(r"ORIG CO NAME:\s*(.+)")
-    ind_name_re = re.compile(r"IND NAME:\s*(.+)")
-    cust_ref_re = re.compile(r"Customer Ref\.\s*(\S+)")
+    # ACH field patterns — present in main line or continuation lines
+    orig_name_re = re.compile(r"ORIG CO NAME:\s*([^|]+?)(?=\s+(?:ORIG ID|DESC DATE|ENTRY DESCR|TRACE|IND ID|IND NAME|REMARK|$))")
+    ind_name_re  = re.compile(r"IND NAME:\s*([^|]+?)(?=\s+(?:ORIG ID|DESC DATE|ENTRY DESCR|TRACE|IND ID|REMARK|$))")
+    nte_name_re  = re.compile(r"NTE\*ZZZ\*([^|\\]+)")  # full legal name from EDI note
 
-    # Debit keywords — skip these transactions
+    # Skip these — they are debits or internal transfers, not customer receipts
     DEBIT_KEYWORDS = [
-        "DEBIT", "DB ", "DRAWDOWN", "CASH CNTRN", "ACH SETTLEMENT",
-        "FPRS", "CORP PAY", "PRFUND", "CONCENTRATION",
+        "DEBIT", " DB ", "DRAWDOWN", "CASH CNTRN", "ACH SETTLEMENT",
+        "FPRS", "PRFUND", "CONCENTRATION", "FOREIGN EXCHANGE",
+        "EXCHANGE DEB", "WIRE DEBIT", "BOOK TRANSFER DB",
     ]
 
     all_text = []
@@ -304,84 +301,67 @@ def _parse_chase_pdf(content: bytes) -> list[dict]:
             text = page.extract_text() or ""
             all_text.append(text)
 
-    full_text = "\n".join(all_text)
-    lines = full_text.split("\n")
+    lines = "\n".join(all_text).split("\n")
 
     transactions = []
     i = 0
     while i < len(lines):
         line = lines[i].strip()
 
-        # Match a transaction start line (two full dates)
         m = txn_simple.match(line)
         if m:
             tran_date_str = m.group(1)
             description = m.group(3).strip()
-
-            # Skip debit transactions
             desc_upper = description.upper()
+
             if any(kw in desc_upper for kw in DEBIT_KEYWORDS):
                 i += 1
                 continue
-            # Also skip lines that are clearly debits by keyword in full line
-            if any(kw in line.upper() for kw in ["DEBIT", " DB ", "DRAWDOWN"]):
-                i += 1
-                continue
 
-            # Collect subsequent detail lines until next transaction or page header
-            detail_lines = []
+            # Collect continuation lines
             j = i + 1
+            detail_lines = []
             while j < len(lines):
-                next_line = lines[j].strip()
-                # Stop at next transaction line or page break markers
-                if txn_simple.match(next_line) or next_line.startswith("Balance and Transaction"):
+                nxt = lines[j].strip()
+                if txn_simple.match(nxt) or nxt.startswith("Balance and Transaction"):
                     break
-                if next_line:
-                    detail_lines.append(next_line)
+                if nxt:
+                    detail_lines.append(nxt)
                 j += 1
 
             detail_block = " ".join(detail_lines)
+            # Search both the main line and continuation lines for all patterns
+            full_block = description + " " + detail_block
 
-            # Extract amounts from the transaction line
+            # Extract amounts — credit is second-to-last number, balance is last
             amounts = [float(a.replace(",", "")) for a in amount_re.findall(line)]
             if not amounts:
-                i += 1
+                i = j
                 continue
-
-            # For credit transactions: Credit Amount is first, Balance is last
-            # We take the first non-balance amount as the credit amount
-            # Balance is the last number; credit is the second-to-last (or only) number
-            if len(amounts) >= 2:
-                credit_amount = amounts[-2]
-                balance = amounts[-1]
-            else:
-                credit_amount = amounts[0]
-
+            credit_amount = amounts[-2] if len(amounts) >= 2 else amounts[0]
             if credit_amount <= 0:
                 i = j
                 continue
 
-            # Extract payer name from detail lines
-            payer = description
-            orig_match = orig_name_re.search(detail_block)
-            ind_match = ind_name_re.search(detail_block)
-            if orig_match:
-                payer = orig_match.group(1).strip()[:255]
-            elif ind_match:
-                payer = ind_match.group(1).strip()[:255]
+            # Payer name: prefer NTE (full legal name) > ORIG CO NAME > IND NAME > truncated description
+            payer = None
+            nte = nte_name_re.search(full_block)
+            orig = orig_name_re.search(full_block)
+            ind  = ind_name_re.search(full_block)
+            if nte:
+                payer = nte.group(1).strip()[:255]
+            elif orig:
+                payer = orig.group(1).strip()[:255]
+            elif ind:
+                payer = ind.group(1).strip()[:255]
 
-            # Extract invoice references from RMR remittance data
-            inv_refs = inv_ref_re.findall(detail_block)
+            # Fallback: first meaningful word token before any ORIG ID / IND / ENTRY field
+            if not payer:
+                clean = re.split(r'\s+ORIG\s+ID|\s+IND\s+|\s+ENTRY\s+|\s+TRACE\s+', description)[0]
+                payer = clean.strip()[:120] or description[:120]
 
-            # Extract customer reference number from the main line
-            parts = line.split()
-            customer_ref = None
-            # Customer ref is typically after the description and before bank ref
-            # It's a standalone alphanumeric token
-            for part in parts[3:]:
-                if re.match(r'^[A-Za-z0-9]{6,}$', part) and not re.match(r'^\d{2}/\d{2}/\d{4}$', part):
-                    customer_ref = part
-                    break
+            # Invoice refs from remittance data (anywhere in full block)
+            inv_refs = inv_ref_re.findall(full_block)
 
             try:
                 pay_date = dateparse(tran_date_str).replace(tzinfo=timezone.utc)
@@ -392,9 +372,9 @@ def _parse_chase_pdf(content: bytes) -> list[dict]:
                 "payment_date": pay_date,
                 "payer_name": payer,
                 "amount": credit_amount,
-                "reference_number": customer_ref,
-                "memo": description,
-                "invoice_refs": inv_refs,  # extracted invoice numbers for auto-matching
+                "reference_number": None,
+                "memo": description[:500],
+                "invoice_refs": inv_refs,
             })
 
             i = j
