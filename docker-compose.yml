@@ -24,7 +24,7 @@ services:
     environment:
       DATABASE_URL: postgresql://aruser:arpassword@db:5432/ardb
       SECRET_KEY: ${SECRET_KEY:-change-me-in-production}
-      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-placeholder}
       GMAIL_CLIENT_ID: ${GMAIL_CLIENT_ID:-}
       GMAIL_CLIENT_SECRET: ${GMAIL_CLIENT_SECRET:-}
       OUTLOOK_CLIENT_ID: ${OUTLOOK_CLIENT_ID:-}
@@ -44,6 +44,7 @@ services:
       - "3000:3000"
     environment:
       VITE_API_URL: http://localhost:8000
+      VITE_BACKEND_URL: http://backend:8000
     volumes:
       - ./frontend:/app
       - /app/node_modules
