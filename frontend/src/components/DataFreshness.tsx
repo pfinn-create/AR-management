@@ -1,6 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
-import { useCompany } from "../../context/CompanyContext";
-import api from "../../utils/api";
+import { useCompany } from "../context/CompanyContext";
+import api from "../utils/api";
 import { Clock } from "lucide-react";
 
 interface Freshness {
