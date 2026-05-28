@@ -14,61 +14,123 @@ function CustomerDetail({ customer, onClose }: { customer: Customer; onClose: ()
     queryFn: () => api.get(`/invoices?company_id=${activeCompany?.id}&customer_id=${customer.id}`).then(r => r.data),
   });
 
+  const open = invoices.filter(i => i.status === "open" || i.status === "partial");
+  const overdue = invoices.filter(i => i.status === "overdue");
+  const paid = invoices.filter(i => i.status === "paid");
+  const totalOpen = open.reduce((s, i) => s + Number(i.balance), 0);
+  const totalOverdue = overdue.reduce((s, i) => s + Number(i.balance), 0);
+  const totalPaid = paid.reduce((s, i) => s + Number(i.amount), 0);
+
+  const agingBuckets = [
+    { label: "Current", amount: invoices.filter(i => (i.days_overdue ?? 0) <= 0 && i.status !== "paid").reduce((s, i) => s + Number(i.balance), 0) },
+    { label: "1–30d", amount: overdue.filter(i => (i.days_overdue ?? 0) <= 30).reduce((s, i) => s + Number(i.balance), 0) },
+    { label: "31–60d", amount: overdue.filter(i => (i.days_overdue ?? 0) > 30 && (i.days_overdue ?? 0) <= 60).reduce((s, i) => s + Number(i.balance), 0) },
+    { label: "61–90d", amount: overdue.filter(i => (i.days_overdue ?? 0) > 60 && (i.days_overdue ?? 0) <= 90).reduce((s, i) => s + Number(i.balance), 0) },
+    { label: ">90d", amount: overdue.filter(i => (i.days_overdue ?? 0) > 90).reduce((s, i) => s + Number(i.balance), 0) },
+  ];
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[90vh] flex flex-col">
-        <div className="flex items-center justify-between p-5 border-b border-gray-100">
-          <h2 className="font-bold text-gray-900">{customer.name}</h2>
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-3xl max-h-[90vh] flex flex-col">
+
+        {/* Header */}
+        <div className="flex items-start justify-between p-5 border-b border-gray-100">
+          <div>
+            <h2 className="font-bold text-gray-900 text-lg">{customer.name}</h2>
+            <div className="flex items-center gap-4 mt-1 text-xs text-gray-400">
+              {customer.email && <a href={`mailto:${customer.email}`} className="flex items-center gap-1 text-blue-500 hover:underline"><Mail className="w-3 h-3" />{customer.email}</a>}
+              {customer.phone && <span className="flex items-center gap-1"><Phone className="w-3 h-3" />{customer.phone}</span>}
+              {customer.contact_name && <span>{customer.contact_name}</span>}
+              <span>Net {customer.payment_terms_days}</span>
+            </div>
+          </div>
           <button onClick={onClose} className="text-gray-400 hover:text-gray-600"><X className="w-5 h-5" /></button>
         </div>
-        <div className="p-5 space-y-4 overflow-y-auto">
-          <div className="grid grid-cols-2 gap-3 text-sm">
-            {customer.contact_name && <div><p className="text-xs text-gray-400">Contact</p><p>{customer.contact_name}</p></div>}
-            {customer.email && (
-              <div><p className="text-xs text-gray-400">Email</p>
-                <a href={`mailto:${customer.email}`} className="text-blue-600 flex items-center gap-1">
-                  <Mail className="w-3 h-3" />{customer.email}
-                </a>
-              </div>
-            )}
-            {customer.phone && (
-              <div><p className="text-xs text-gray-400">Phone</p>
-                <span className="flex items-center gap-1"><Phone className="w-3 h-3" />{customer.phone}</span>
-              </div>
-            )}
-            <div><p className="text-xs text-gray-400">Payment Terms</p><p>Net {customer.payment_terms_days}</p></div>
-            {customer.credit_limit && <div><p className="text-xs text-gray-400">Credit Limit</p><p>{formatCurrency(Number(customer.credit_limit))}</p></div>}
-            <div><p className="text-xs text-gray-400">Open Balance</p><p className="font-semibold">{formatCurrency(customer.open_balance || 0)}</p></div>
-            {(customer.overdue_balance || 0) > 0 && (
-              <div><p className="text-xs text-gray-400">Overdue Balance</p><p className="font-semibold text-red-600">{formatCurrency(customer.overdue_balance || 0)}</p></div>
-            )}
+
+        <div className="p-5 space-y-5 overflow-y-auto">
+
+          {/* Summary stat cards */}
+          <div className="grid grid-cols-3 gap-3">
+            <div className="bg-blue-50 rounded-xl p-3">
+              <p className="text-xs text-blue-500 font-medium">Open Balance</p>
+              <p className="text-lg font-bold text-blue-700">{formatCurrency(totalOpen)}</p>
+              <p className="text-xs text-blue-400">{open.length} invoices</p>
+            </div>
+            <div className={`rounded-xl p-3 ${totalOverdue > 0 ? "bg-red-50" : "bg-gray-50"}`}>
+              <p className={`text-xs font-medium ${totalOverdue > 0 ? "text-red-500" : "text-gray-400"}`}>Overdue</p>
+              <p className={`text-lg font-bold ${totalOverdue > 0 ? "text-red-700" : "text-gray-400"}`}>{formatCurrency(totalOverdue)}</p>
+              <p className={`text-xs ${totalOverdue > 0 ? "text-red-400" : "text-gray-300"}`}>{overdue.length} invoices</p>
+            </div>
+            <div className="bg-green-50 rounded-xl p-3">
+              <p className="text-xs text-green-500 font-medium">Collected (all time)</p>
+              <p className="text-lg font-bold text-green-700">{formatCurrency(totalPaid)}</p>
+              <p className="text-xs text-green-400">{paid.length} paid invoices</p>
+            </div>
           </div>
 
+          {/* Aging breakdown */}
+          {totalOverdue > 0 && (
+            <div>
+              <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Aging Breakdown</h3>
+              <div className="flex gap-2">
+                {agingBuckets.map(b => (
+                  <div key={b.label} className={`flex-1 rounded-lg p-2.5 text-center ${b.amount > 0 ? "bg-orange-50 border border-orange-100" : "bg-gray-50"}`}>
+                    <p className="text-xs text-gray-400">{b.label}</p>
+                    <p className={`text-sm font-bold ${b.amount > 0 ? "text-orange-700" : "text-gray-300"}`}>{formatCurrency(b.amount)}</p>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Invoice list */}
           <div>
-            <h3 className="font-semibold text-gray-800 mb-2 text-sm">Invoice History</h3>
+            <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">
+              All Invoices ({invoices.length})
+            </h3>
             {invoices.length === 0 ? (
-              <p className="text-gray-400 text-sm">No invoices</p>
+              <p className="text-gray-400 text-sm text-center py-4">No invoices</p>
             ) : (
-              <table className="w-full text-xs">
-                <thead>
-                  <tr className="text-left text-gray-400 border-b border-gray-100">
-                    <th className="pb-1.5">Invoice #</th>
-                    <th className="pb-1.5">Due Date</th>
-                    <th className="pb-1.5 text-right">Balance</th>
-                    <th className="pb-1.5">Status</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-gray-50">
-                  {invoices.map(inv => (
-                    <tr key={inv.id}>
-                      <td className="py-1.5 font-mono text-blue-600">{inv.invoice_number}</td>
-                      <td className="py-1.5 text-gray-500">{formatDate(inv.due_date)}</td>
-                      <td className="py-1.5 text-right font-semibold">{formatCurrency(Number(inv.balance))}</td>
-                      <td className="py-1.5"><span className={`badge ${statusColor(inv.status)}`}>{inv.status}</span></td>
+              <div className="rounded-xl border border-gray-100 overflow-hidden">
+                <table className="w-full text-xs">
+                  <thead className="bg-gray-50">
+                    <tr className="text-left text-gray-400">
+                      <th className="px-3 py-2 font-medium">Invoice #</th>
+                      <th className="px-3 py-2 font-medium">Invoice Date</th>
+                      <th className="px-3 py-2 font-medium">Due Date</th>
+                      <th className="px-3 py-2 font-medium text-right">Amount</th>
+                      <th className="px-3 py-2 font-medium text-right">Balance</th>
+                      <th className="px-3 py-2 font-medium">Status</th>
+                      <th className="px-3 py-2 font-medium text-right">Days Overdue</th>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
+                  </thead>
+                  <tbody className="divide-y divide-gray-50">
+                    {invoices.map(inv => (
+                      <tr key={inv.id} className="hover:bg-gray-50">
+                        <td className="px-3 py-2 font-mono text-blue-600">{inv.invoice_number}</td>
+                        <td className="px-3 py-2 text-gray-500">{formatDate(inv.invoice_date)}</td>
+                        <td className="px-3 py-2 text-gray-500">{formatDate(inv.due_date)}</td>
+                        <td className="px-3 py-2 text-right">{formatCurrency(Number(inv.amount))}</td>
+                        <td className="px-3 py-2 text-right font-semibold">{formatCurrency(Number(inv.balance))}</td>
+                        <td className="px-3 py-2"><span className={`badge ${statusColor(inv.status)}`}>{inv.status}</span></td>
+                        <td className="px-3 py-2 text-right">
+                          {inv.days_overdue != null && inv.days_overdue > 0
+                            ? <span className="text-red-600 font-semibold">{inv.days_overdue}d</span>
+                            : <span className="text-gray-300">—</span>}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                  <tfoot className="bg-gray-50 border-t border-gray-200">
+                    <tr>
+                      <td colSpan={3} className="px-3 py-2 text-xs font-semibold text-gray-600">Total</td>
+                      <td className="px-3 py-2 text-right text-xs font-semibold">{formatCurrency(invoices.reduce((s, i) => s + Number(i.amount), 0))}</td>
+                      <td className="px-3 py-2 text-right text-xs font-bold text-blue-700">{formatCurrency(invoices.reduce((s, i) => s + Number(i.balance), 0))}</td>
+                      <td colSpan={2} />
+                    </tr>
+                  </tfoot>
+                </table>
+              </div>
             )}
           </div>
         </div>
