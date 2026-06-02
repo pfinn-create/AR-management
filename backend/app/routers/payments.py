@@ -1,5 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Query, Body
 from sqlalchemy.orm import Session
+from sqlalchemy import text
 from typing import List, Optional
 from datetime import datetime, timezone, date
 import pandas as pd
@@ -84,9 +85,8 @@ def bulk_delete_payments(
     payments = db.query(Payment).filter(Payment.id.in_(ids)).all()
     for p in payments:
         assert_company_access(user, p.company_id)
-    db.query(RemittanceLine).filter(RemittanceLine.payment_id.in_(ids)).delete(synchronize_session=False)
-    db.flush()
-    db.query(Payment).filter(Payment.id.in_(ids)).delete(synchronize_session=False)
+    db.execute(text("DELETE FROM remittance_lines WHERE payment_id = ANY(:ids)"), {"ids": ids})
+    db.execute(text("DELETE FROM payments WHERE id = ANY(:ids)"), {"ids": ids})
     db.commit()
     return {"deleted": len(payments)}
 
@@ -98,12 +98,9 @@ def delete_all_payments(
     user: User = Depends(current_user),
 ):
     assert_company_access(user, company_id)
-    payment_ids = [p.id for p in db.query(Payment).filter(Payment.company_id == company_id).all()]
-    count = len(payment_ids)
-    if payment_ids:
-        db.query(RemittanceLine).filter(RemittanceLine.payment_id.in_(payment_ids)).delete(synchronize_session=False)
-        db.flush()
-        db.query(Payment).filter(Payment.company_id == company_id).delete(synchronize_session=False)
+    count = db.query(Payment).filter(Payment.company_id == company_id).count()
+    db.execute(text("DELETE FROM remittance_lines WHERE payment_id IN (SELECT id FROM payments WHERE company_id = :cid)"), {"cid": company_id})
+    db.execute(text("DELETE FROM payments WHERE company_id = :cid"), {"cid": company_id})
     db.commit()
     return {"deleted": count}
 
