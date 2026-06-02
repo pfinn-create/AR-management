@@ -85,6 +85,7 @@ def bulk_delete_payments(
     for p in payments:
         assert_company_access(user, p.company_id)
     db.query(RemittanceLine).filter(RemittanceLine.payment_id.in_(ids)).delete(synchronize_session=False)
+    db.flush()
     db.query(Payment).filter(Payment.id.in_(ids)).delete(synchronize_session=False)
     db.commit()
     return {"deleted": len(payments)}
@@ -97,10 +98,11 @@ def delete_all_payments(
     user: User = Depends(current_user),
 ):
     assert_company_access(user, company_id)
-    payment_ids = [p.id for p in db.query(Payment.id).filter(Payment.company_id == company_id).all()]
+    payment_ids = [p.id for p in db.query(Payment).filter(Payment.company_id == company_id).all()]
     count = len(payment_ids)
     if payment_ids:
         db.query(RemittanceLine).filter(RemittanceLine.payment_id.in_(payment_ids)).delete(synchronize_session=False)
+        db.flush()
         db.query(Payment).filter(Payment.company_id == company_id).delete(synchronize_session=False)
     db.commit()
     return {"deleted": count}
