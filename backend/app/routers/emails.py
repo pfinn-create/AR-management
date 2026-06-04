@@ -52,7 +52,11 @@ async def create_draft(
     assert_company_access(user, thread.company_id)
 
     from app.agents.email_agent import draft_reply
-    return await draft_reply(thread, db, instructions=req.instructions)
+    return await draft_reply(
+        thread, db,
+        instructions=req.instructions,
+        attach_invoice_ids=req.attach_invoice_ids,
+    )
 
 
 @router.patch("/{thread_id}/status")

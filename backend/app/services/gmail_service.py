@@ -8,6 +8,9 @@ import re
 from datetime import datetime, timezone, timedelta
 from typing import Optional
 from email.mime.text import MIMEText
+from email.mime.multipart import MIMEMultipart
+from email.mime.base import MIMEBase
+from email import encoders
 
 from google.oauth2.credentials import Credentials
 from google.auth.transport.requests import Request
@@ -377,10 +380,13 @@ def push_draft_to_gmail(
     subject: str,
     body: str,
     db: Session,
+    attachments: list[tuple[str, bytes]] | None = None,
 ) -> Optional[str]:
     """
     Create a draft in the Gmail mailbox associated with this thread.
     Returns the Gmail draft ID, or None if push fails.
+
+    attachments: optional list of (filename, file_bytes) tuples.
     """
     token = db.query(OAuthToken).filter(
         OAuthToken.company_id == thread.company_id,
@@ -399,7 +405,18 @@ def push_draft_to_gmail(
         service = build("gmail", "v1", credentials=creds)
 
         # Build the MIME message
-        mime_msg = MIMEText(body, "plain")
+        if attachments:
+            mime_msg = MIMEMultipart()
+            mime_msg.attach(MIMEText(body, "plain"))
+            for filename, file_bytes in attachments:
+                part = MIMEBase("application", "octet-stream")
+                part.set_payload(file_bytes)
+                encoders.encode_base64(part)
+                part.add_header("Content-Disposition", f'attachment; filename="{filename}"')
+                mime_msg.attach(part)
+        else:
+            mime_msg = MIMEText(body, "plain")
+
         mime_msg["Subject"] = subject
         mime_msg["From"] = thread.mailbox
 

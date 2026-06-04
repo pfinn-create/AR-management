@@ -22,6 +22,7 @@ async def draft_reply(
     thread: EmailThread,
     db: Session,
     instructions: str = None,
+    attach_invoice_ids: list[int] | None = None,
 ) -> DraftOut:
     messages = thread.messages
     customer = thread.customer
@@ -106,12 +107,32 @@ Respond ONLY with valid JSON:
     subject = data.get("subject", f"Re: {thread.subject or 'Your inquiry'}")
     body = data.get("body", "")
 
+    # Build PDF attachments for requested invoices
+    attachments = []
+    if attach_invoice_ids:
+        from app.models.invoice import Invoice
+        from app.models.company import Company
+        from app.services.invoice_pdf import generate_invoice_pdf
+        company = db.query(Company).filter(Company.id == thread.company_id).first()
+        for inv_id in attach_invoice_ids:
+            inv = db.query(Invoice).filter(
+                Invoice.id == inv_id,
+                Invoice.company_id == thread.company_id,
+            ).first()
+            if inv:
+                pdf_bytes = generate_invoice_pdf(inv, customer, company)
+                filename = f"Invoice_{inv.invoice_number}.pdf"
+                attachments.append((filename, pdf_bytes))
+
     # Push to Gmail Drafts if connected
     gmail_draft_id = None
     if thread.source and thread.source.value == "gmail":
         try:
             from app.services.gmail_service import push_draft_to_gmail
-            gmail_draft_id = push_draft_to_gmail(thread, subject, body, db)
+            gmail_draft_id = push_draft_to_gmail(
+                thread, subject, body, db,
+                attachments=attachments or None,
+            )
         except Exception:
             pass
 

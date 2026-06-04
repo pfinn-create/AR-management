@@ -37,6 +37,7 @@ class EmailThreadOut(BaseModel):
 class DraftRequest(BaseModel):
     thread_id: int
     instructions: Optional[str] = None
+    attach_invoice_ids: Optional[List[int]] = None
 
 
 class DraftOut(BaseModel):
